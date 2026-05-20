@@ -1,0 +1,42 @@
+# Tuist (generated)
+*.xcodeproj
+*.xcworkspace
+Derived/
+.build/
+graph.dot
+
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.moved-aside
+*.pbxuser
+*.perspectivev3
+!default.perspectivev3
+*.xccheckout
+*.xcscmblueprint
+
+# Swift Package Manager
+Packages/
+Package.resolved
+.swiftpm/
+
+# CocoaPods (unused, but ignore preemptively)
+Pods/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# IDEs
+.idea/
+.vscode/
+
+# Local secrets (e.g. API keys for quote providers)
+.env
+.env.*
+*.local
+Secrets/
