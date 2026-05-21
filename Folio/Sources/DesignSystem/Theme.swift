@@ -20,6 +20,7 @@ struct FolioTheme: Equatable {
     let desktop: Color
     let rowHover: Color
     let cardBg: Color
+    let sidebarSelectionBg: Color
 
     static let light = FolioTheme(
         bg:           Color(hex: 0xFFFFFF),
@@ -40,7 +41,8 @@ struct FolioTheme: Equatable {
         sp:           Color(hex: 0x2563EB),
         desktop:      Color(hex: 0xE4E4E7),
         rowHover:     Color(hex: 0xFAFAFB),
-        cardBg:       Color(hex: 0xFFFFFF)
+        cardBg:       Color(hex: 0xFFFFFF),
+        sidebarSelectionBg: Color(hex: 0xD6D6D8)
     )
 
     static let dark = FolioTheme(
@@ -62,7 +64,8 @@ struct FolioTheme: Equatable {
         sp:           Color(hex: 0x5E9CFF),
         desktop:      Color(hex: 0x0F0F10),
         rowHover:     Color(hex: 0x2C2C2F),
-        cardBg:       Color(hex: 0x242427)
+        cardBg:       Color(hex: 0x242427),
+        sidebarSelectionBg: Color(hex: 0x323132)
     )
 
     static func resolve(_ scheme: ColorScheme) -> FolioTheme {

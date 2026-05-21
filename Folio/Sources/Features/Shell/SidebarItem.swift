@@ -8,7 +8,6 @@ struct SidebarItem: View {
 
     let destination: Destination
     let isActive: Bool
-    let isHovered: Bool
     let onSelect: () -> Void
 
     var body: some View {
@@ -46,11 +45,7 @@ struct SidebarItem: View {
     private var rowBackground: some View {
         if isActive {
             RoundedRectangle(cornerRadius: 5)
-                .fill(theme.blue)
-                .padding(.horizontal, 8)
-        } else if isHovered {
-            RoundedRectangle(cornerRadius: 5)
-                .fill(Color.primary.opacity(0.06))
+                .fill(theme.sidebarSelectionBg)
                 .padding(.horizontal, 8)
         } else {
             Color.clear
@@ -58,10 +53,10 @@ struct SidebarItem: View {
     }
 
     private var textColor: Color {
-        isActive ? .white : theme.text
+        isActive ? Color(nsColor: .controlAccentColor) : theme.text
     }
 
     private var iconColor: Color {
-        isActive ? .white : theme.text2
+        isActive ? Color(nsColor: .controlAccentColor) : theme.text2
     }
 }

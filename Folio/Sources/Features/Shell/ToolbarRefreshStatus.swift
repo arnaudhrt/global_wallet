@@ -30,13 +30,11 @@ struct ToolbarRefreshStatus: View {
                     .foregroundStyle(theme.text2)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(theme.surface)
-            .overlay(
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(theme.border, lineWidth: 1)
+            .frame(height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(.quaternary)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
         .help("Refresh quotes (⌘R)")

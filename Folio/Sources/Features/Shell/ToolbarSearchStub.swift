@@ -9,25 +9,16 @@ struct ToolbarSearchStub: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 11, weight: .regular))
+                .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(theme.text3)
-            Text("Search holdings")
-                .font(.system(size: 12))
-                .foregroundStyle(theme.text2)
-            Spacer(minLength: 12)
-            Text("⌘K")
-                .font(.system(size: 10, design: .monospaced))
+            Text("Search")
+                .font(.system(size: 13))
                 .foregroundStyle(theme.text3)
+            Spacer(minLength: 0)
+            
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .frame(width: 200)
-        .background(theme.surface)
-        .overlay(
-            RoundedRectangle(cornerRadius: 5)
-                .stroke(theme.border, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 5))
-        .allowsHitTesting(false)
+        .frame(width: 240, height: 28)
+        .allowsHitTesting(true)
     }
 }

@@ -92,6 +92,47 @@ The repo `global_wallet` was empty when the project began (just a README). Produ
 
 ---
 
+## Audit follow-ups (deferred from M4.5)
+
+Items surfaced by the 2026-05-21 pre-M5 review that were intentionally **not** fixed in the M4.5 commit — tagged with the milestone where they'll naturally come up. Strike through as each lands.
+
+**Tackle during M5 (when touching this code anyway):**
+- `Folio/Sources/DesignSystem/Formatters.swift` — `FolioFormat` is dead in production (only `DesignSystemPreview` consumes it). Move next to the preview as a private helper, or delete and inline.
+- `AppRouter.swift:5` — doc-comment references a non-existent `.environment(\.appRouter, …)` key path. Real injection is `.environment(router)` via `@Observable`. One-line fix.
+- `PlaceholderScreen.swift:26–32` — `switch Destination` has a `default` arm catching unreachable v2 destinations. Make exhaustive.
+- `SidebarItem.swift:53,61,65` — uses raw `Color.primary` / `.white` instead of theme tokens. Add `theme.hoverBg` + `theme.onAccent` or document the deviations.
+- `MockQuoteProvider.swift:48–51,75` — `Decimal(string: "0.92")!` force-unwraps. Programmer-controlled literals, so won't crash, but worth tidying.
+- `SidebarFooter.swift:38–51` — recomputes the reducer on every body redraw. Fine at 34 txns; profile when M5 inflates ledger volume. Consider memoizing via `@State` or a small view model.
+- Empirically verify the `Holding.ID` stability fix once the Stocks table lands — `ForEach(\.id)` rows should keep selection/hover across `@Query` updates.
+
+**Tackle during M10 (settings + polish):**
+- `MacShell.swift:49` — Add-holding bound to `⌘N`, conflicts with the macOS standard "New Window". Pick `⌘+` or `⌘⇧N`.
+- `QuoteRefreshCoordinator.swift:135–142` — `Timer.scheduledTimer` keeps firing when the app is backgrounded or the window is closed. Observe `NSApplication.didBecome/ResignActive` to pause/resume.
+- `SidebarFooter.swift:44` — FX closure hard-codes `from == to ? 1 : nil`. Wire a real FX closure that consults `FXRate` rows once the base-currency picker ships.
+- `QuoteRefreshCoordinator.swift:121–128` — save-error catch swallows *any* error (disk full, schema migration) and still flips status to `.ok`. Filter to constraint-violation codes only; let the rest fail loudly.
+- Replace `print(…)` in `HoldingsReducer.swift:81,100,107` and `QuoteRefreshCoordinator.swift:127` with `os_log`.
+- Document `Money` mixed-currency `precondition` trap behavior in the type's doc-comment so callers know it's a programmer-error trap.
+
+**Tackle during M11 (test + verify):**
+- Add a `Money` precondition-trap test (or extract a public throwing variant for user-input paths and test that).
+- Add an FX-pair de-duplication test in `QuoteRefreshCoordinatorTests` — `collectFXPairs` distinct-pair behavior is currently untested.
+- Replace `MockQuoteProviderTests.testFXRateUSDEURRoundtripCloseToOne` — it asserts a property of hardcoded constants, not behavior.
+- Synthetic seed dates (`2024-05-20` syntheticBuyDate vs `2026-05-x` mock txns) rely on sort order — brittle but currently correct. Note at M11.
+
+**Defer to v2 (driven by future milestones):**
+- `HoldingsReducer.swift:85` — ignores `txn.fee`. The Fees screen is v2 backlog; revisit then. Until then, inline-comment why the field is intentionally unused.
+- `PortfolioMetrics.totalValue` — returns 0 for holdings with nil `marketValue`. Fine for MVP; consider a sibling `missingPriceCount` accessor for Overview empty-state UX.
+- HTTP-layer 429 → `.rateLimited` mapping is untested (would require `URLProtocol` stubbing).
+- `Money.formatted` falls back to a verbose form for ISO codes the locale doesn't recognize. Only exercised once non-USD ships.
+
+**Discuss when relevant:**
+- `Money` mixed-currency math currently traps via `precondition`. Once M9 lets users enter non-base-currency transactions, decide whether to keep the trap or convert to throwing for user-input paths.
+- `PortfolioMetrics` is `@MainActor`-isolated only because `Holding.asset.kind` crosses into a SwiftData model. Could split into a pure variant over precomputed `AssetKind` values if M11 tests find the actor coupling painful.
+- `ContentView.swift` is now only referenced by its own `#Preview`. Keep as a preview canvas or delete and inline the previews into `DesignSystemPreview`?
+- Hardcoded wallet/account hex colors are duplicated between `DesignSystemPreview.swift:76–80` and `SeedData.swift:140–148`. Extracting to a `BrandPalette.swift` would dedupe — worth doing once M5/M6 needs the same palette for badges.
+
+---
+
 ## Architecture at a glance
 
 Legend: **[✓ Mn]** = exists on disk · **[Mn]** = planned for that milestone.

@@ -17,6 +17,7 @@ struct MacShell: View {
                 .navigationTitle(router.selection.title)
                 .navigationSubtitle(router.selection.subtitle)
                 .toolbar { toolbarContent }
+                .toolbarBackground(.hidden, for: .windowToolbar)
                 .sheet(isPresented: $router.showAddSheet) {
                     AddTransactionStubSheet()
                 }
@@ -32,22 +33,22 @@ struct MacShell: View {
     private var toolbarContent: some ToolbarContent {
         // Each control gets its own ToolbarItem so styling doesn't bleed
         // across siblings — macOS groups sibling controls inside one ToolbarItem.
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItem(placement: .secondaryAction) {
             ToolbarSearchStub()
         }
         ToolbarItem(placement: .primaryAction) {
-            ToolbarRefreshStatus()
-        }
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                router.showAddSheet = true
-            } label: {
-                Label("Add holding", systemImage: "plus")
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.blue)
-            .keyboardShortcut("n", modifiers: .command)
-            .help("Add holding (⌘N)")
-        }
+    Button {
+        router.showAddSheet = true
+    } label: {
+        Image(systemName: "plus")
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(theme.text2)
+            .frame(width: 34, height: 28)
+            .contentShape(Circle())
+    }
+    .buttonStyle(.plain)
+    .keyboardShortcut("n", modifiers: .command)
+    .help("Add holding (⌘N)")
+}
     }
 }
