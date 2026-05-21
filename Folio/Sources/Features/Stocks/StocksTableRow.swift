@@ -43,9 +43,9 @@ struct StocksTableRow: View {
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
                 AllocBar(pct: allocation, color: theme.green)
+                    .padding(.trailing, 18)
             }
             .frame(width: 150)
-            .padding(.trailing, 18)
         }
         .frame(height: 44)
         .background(isHovered ? theme.rowHover : Color.clear)
@@ -59,8 +59,8 @@ struct StocksTableRow: View {
             .font(.system(size: 12, weight: weight, design: .monospaced))
             .monospacedDigit()
             .foregroundStyle(color)
-            .frame(width: width, alignment: .trailing)
             .padding(.trailing, 8)
+            .frame(width: width, alignment: .trailing)
     }
 
     private var qtyText: String {
