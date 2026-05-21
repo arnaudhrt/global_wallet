@@ -31,6 +31,8 @@ struct MacShell: View {
             StocksScreen()
         case .crypto:
             CryptoScreen()
+        case .transactions:
+            TransactionsScreen()
         default:
             PlaceholderScreen(destination: destination)
         }
