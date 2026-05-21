@@ -99,13 +99,20 @@ enum HoldingsReducer {
                 bucket.cost += lineCost
             case .sell:
                 // Standard weighted-avg: reduce qty and cost proportionally so
-                // the per-share avg-cost is preserved across the sale.
+                // the per-share avg-cost is preserved across the sale. Sells
+                // larger than current qty are clamped at zero — going short
+                // isn't modeled in MVP and a negative-qty bucket would make
+                // the basis math undefined for any subsequent buy.
                 if bucket.qty > 0 {
+                    let sellQty = min(qty, bucket.qty)
+                    if sellQty < qty {
+                        print("⚠️ HoldingsReducer: over-sell on \(asset.symbol) — sold \(qty), only \(bucket.qty) held; clamping")
+                    }
                     let avgBefore = bucket.cost / bucket.qty
-                    bucket.qty  -= qty
-                    bucket.cost -= qty * avgBefore
+                    bucket.qty  -= sellQty
+                    bucket.cost -= sellQty * avgBefore
                 } else {
-                    bucket.qty -= qty
+                    print("⚠️ HoldingsReducer: sell on \(asset.symbol) with no holdings — ignoring")
                 }
             case .dividend, .deposit, .withdraw, .transfer:
                 break
@@ -129,7 +136,10 @@ enum HoldingsReducer {
             }()
 
             return Holding(
-                id: UUID(),
+                id: Holding.ID(
+                    assetID: bucket.asset.persistentModelID,
+                    accountID: bucket.account?.persistentModelID
+                ),
                 asset: bucket.asset,
                 account: bucket.account,
                 qty: bucket.qty,

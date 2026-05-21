@@ -1,14 +1,15 @@
 import SwiftUI
 import SwiftData
 
-/// Sidebar footer with brand avatar + portfolio total + account count.
+/// Sidebar footer with brand avatar + account count + live portfolio total.
 ///
-/// Account count is live (`@Query` on `Account`). Portfolio total stays at
-/// $0.00 until M4 wires live `PriceQuote` data into `HoldingsReducer`; the
-/// `Money` value is formatted with the user's base currency from `AppSettings`.
+/// Total is computed on every render from `@Query` transactions + the newest
+/// `PriceQuote` per asset. `fxAt` stays USD-only in M4 — once M10 ships the
+/// base-currency picker the closure routes through cached `FXRate` rows.
 struct SidebarFooter: View {
     @Environment(\.theme) private var theme
     @Query private var accounts: [Account]
+    @Query private var transactions: [PortfolioTransaction]
     @Query private var settings: [AppSettings]
 
     var body: some View {
@@ -34,11 +35,19 @@ struct SidebarFooter: View {
     }
 
     private var footerLine: String {
+        let baseCurrency = settings.first?.baseCurrency ?? "USD"
+        let holdings = HoldingsReducer.reduceByAsset(
+            transactions: transactions,
+            priceFor: { asset in
+                asset.quotes.sorted(by: { $0.asOf > $1.asOf }).first?.amount
+            },
+            fxAt: { from, to, _ in from == to ? 1 : nil },
+            baseCurrency: baseCurrency
+        )
+        let total = PortfolioMetrics.totalValue(holdings, baseCurrency: baseCurrency)
         let count = accounts.count
         let plural = count == 1 ? "account" : "accounts"
-        let baseCurrency = settings.first?.baseCurrency ?? "USD"
-        let total = Money.zero(baseCurrency).formatted()
-        return "\(count) \(plural) · \(total)"
+        return "\(count) \(plural) · \(total.formatted())"
     }
 
     private var avatar: some View {

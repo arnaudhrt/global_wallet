@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// Projected holding row produced by `HoldingsReducer`. Pure value type — does
 /// not hit SwiftData on its own.
@@ -7,8 +8,18 @@ import Foundation
 /// account) view used by the Crypto expand-per-wallet rows. `marketValue` /
 /// `unrealizedPnL` / `unrealizedPnLPct` are nil when the price closure returns
 /// nil for this asset.
+///
+/// `id` is derived from the (asset, account) `PersistentIdentifier`s so SwiftUI
+/// `ForEach` keeps per-row state (selection, hover, expansion) stable across
+/// reducer re-runs. A `UUID()` per call would discard that state on every
+/// `@Query` update.
 struct Holding: Identifiable, Hashable {
-    let id: UUID
+    struct ID: Hashable {
+        let assetID: PersistentIdentifier
+        let accountID: PersistentIdentifier?
+    }
+
+    let id: ID
     let asset: Asset
     let account: Account?
     let qty: Decimal

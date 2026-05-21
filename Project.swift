@@ -5,7 +5,8 @@ let project = Project(
     organizationName: "Folio",
     settings: .settings(
         base: [
-            "SWIFT_VERSION": "5.10",
+            "SWIFT_VERSION": "6.0",
+            "SWIFT_STRICT_CONCURRENCY": "complete",
             "MACOSX_DEPLOYMENT_TARGET": "14.0",
             "ENABLE_HARDENED_RUNTIME": "YES",
             "CODE_SIGN_STYLE": "Automatic",

@@ -66,10 +66,18 @@ struct Metric: View {
     }
 
     private func badgeForeground(for tone: FolioTone) -> Color {
-        tone == .positive ? theme.green : theme.red
+        switch tone {
+        case .positive: return theme.green
+        case .negative: return theme.red
+        case .neutral:  return theme.text2
+        }
     }
 
     private func badgeBackground(for tone: FolioTone) -> Color {
-        tone == .positive ? theme.greenBg : theme.redBg
+        switch tone {
+        case .positive: return theme.greenBg
+        case .negative: return theme.redBg
+        case .neutral:  return theme.surface
+        }
     }
 }

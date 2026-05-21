@@ -22,7 +22,8 @@
 | M1 — Design system | ✓ done (2026-05-20) | `FolioTheme` light+dark · `\.theme` env · 7 primitives (Card / Metric / SectionHeader / PeriodPills / AccountBadge / Dot / AllocBar) · `FolioFormat` (USD/pct/num) · `DesignSystemPreview` wired into ContentView |
 | M2 — Shell + navigation | ✓ done (2026-05-20) | Custom `NavigationSplitView` sidebar (3 groups, v2 rows dimmed) · `AppRouter` (`@Observable`) · ⌘1–⌘4 via `Commands` block · native toolbar with `.navigationSubtitle` + ⌘K search stub + "+ Add holding" sheet stub · `PlaceholderScreen` in detail slot |
 | M3 — Domain model + persistence | ✓ done (2026-05-20) | SwiftData schema (6 entities; `Transaction` → `PortfolioTransaction` to avoid SwiftUI collision) · `Money` value type (Decimal+ISO, decomposed in storage) · `HoldingsReducer` `@MainActor` with closure-injected price+FX · weighted-avg cost basis (sells reduce qty and cost proportionally) · seed loader idempotent on empty DB · 19 tests green · sidebar footer now `@Query`-bound |
-| M4 — Quote + FX service | ☐ not started | |
+| M4 — Quote + FX service | ✓ done (2026-05-21) | `QuoteProvider` + `FXProvider` protocols · `MockQuoteProvider` (LCG walk + fixed FX) · `YahooQuoteProvider` (stocks/ETFs/FX, `.`→`-` symbol fix for BRK.B) · `CoinGeckoQuoteProvider` (batched `simple/price` call, MATIC→`polygon-ecosystem-token` post-rebrand) · `QuoteRefreshCoordinator` `@Observable @MainActor` dispatching by `AssetKind` · launch + ⌘R + 15-min timer · compact toolbar status pill (green/amber/red dot, click to refresh) · `SidebarFooter` now live via `HoldingsReducer` · 30 tests green (added 11) |
+| M4.5 — Pre-M5 audit + Swift 6 bump | ✓ done (2026-05-21) | Full code review of M0–M4. Fixed 5 bugs: FX cache UTC-vs-local mismatch in `QuoteRefreshCoordinator.collectFXPairs`, non-stable `Holding.id` (now derived from asset/account `PersistentIdentifier`), `MetricBadge` `.neutral` fall-through to `.negative`, `HoldingsReducer` over-sell now clamps at qty 0, `PriceQuote` rows now dedupe per (asset, source) within 60s. Bumped to Swift 6.0 + `SWIFT_STRICT_CONCURRENCY=complete` — codebase was already clean, zero new diagnostics. Test coverage near-doubled: 30 → 54 (Money decimal correctness incl. 0.1+0.2=0.3, cross-currency cost basis, full `PortfolioMetrics` suite, coordinator partial-success/total-fail, Yahoo/CoinGecko URL builders extracted + tested) |
 | M5 — Stocks & ETFs screen | ☐ not started | |
 | M6 — Crypto screen | ☐ not started | |
 | M7 — Transactions screen | ☐ not started | |
@@ -35,10 +36,10 @@ Legend: ☐ not started · ◐ in progress · ✓ done · ✕ skipped/changed
 
 ---
 
-## Toolchain (verified 2026-05-20)
+## Toolchain (verified 2026-05-21)
 
 - macOS 26 (Darwin 25.x), Apple Silicon
-- Xcode 26.4 — Swift 6.3 (Apple swift-driver 1.148.6)
+- Xcode 26.4 — Swift 6.3 toolchain · **Swift 6.0 language mode** with `SWIFT_STRICT_CONCURRENCY=complete`
 - Tuist 4.195.2 (installed via Homebrew)
 - Homebrew 5.1.8
 
@@ -74,6 +75,9 @@ The repo `global_wallet` was empty when the project began (just a README). Produ
 | Cost basis (MVP) | Weighted average cost (FIFO/LIFO deferred to v2) |
 | Money type | `Decimal`-backed value type with ISO currency tag; decomposed into sibling `amount: Decimal` + `currency: String` columns in SwiftData (computed `…Money` accessor) |
 | Ledger model name | `PortfolioTransaction` (the `@Model` class) to avoid colliding with `SwiftUI.Transaction`; UI label stays "Transactions" |
+| Over-sell policy | `HoldingsReducer` clamps sells at current qty (no negative-qty buckets, no shorts in MVP) — over-sized sells log a warning and the excess is dropped |
+| PriceQuote dedupe | Refreshes within 60s of the last quote for the same (asset, source) update in place; older rows are preserved (historicals stay valid for M8) |
+| Swift mode | Swift 6.0 language mode + `SWIFT_STRICT_CONCURRENCY=complete` (bumped 2026-05-21 during the pre-M5 audit — zero new diagnostics surfaced) |
 
 ---
 
@@ -84,7 +88,7 @@ The repo `global_wallet` was empty when the project began (just a README). Produ
   - (b) snapshot approximation (assume current holdings always held),
   - (c) defer chart to v2.
   Plan ships Overview MVP **without** the chart; M8 leaves a layout slot. Decide before M8 implementation.
-- **Quote refresh cadence** — proposed: on-launch + manual `⌘R` + 15-min foreground timer; revisit at M4.
+- ~~**Quote refresh cadence** — proposed: on-launch + manual `⌘R` + 15-min foreground timer; revisit at M4.~~ **Resolved 2026-05-21:** on-launch + manual ⌘R + 15-min foreground timer (as proposed). Implemented in `QuoteRefreshCoordinator.startTimer(interval: 900)`.
 
 ---
 
@@ -120,8 +124,10 @@ global_wallet/
     │   │                                        + Enums.swift, SeedData.swift
     │   ├── Domain/                            — Money, Holding, HoldingsReducer,   [✓ M3]
     │   │                                        PortfolioMetrics
-    │   ├── Services/                          — QuoteProvider protocol + impls +   [M4]
-    │   │                                        QuoteRefreshCoordinator
+    │   ├── Services/                          — QuoteProvider + FXProvider        [✓ M4]
+    │   │                                        protocols, Mock/Yahoo/CoinGecko
+    │   │                                        providers, QuoteRefreshCoordinator,
+    │   │                                        HTTPClient
     │   └── Features/
     │       ├── Shell/                         — NavigationSplitView + sidebar      [✓ M2]
     │       ├── Overview/                                                            [M8]
@@ -181,6 +187,8 @@ global_wallet/
 - `YahooQuoteProvider` (stocks/ETFs/FX) and `CoinGeckoQuoteProvider` (crypto) — gated behind the protocol so swapping is one DI change.
 - `QuoteRefreshCoordinator`: refresh on launch, manual `⌘R`, 15-min foreground timer. Writes to `PriceQuote` cache.
 - Failures surface as a non-blocking banner — quotes are best-effort, never crash the app.
+
+**Result (2026-05-21):** Shipped 7 new files under `Folio/Sources/Services/`: `QuoteProvider.swift` (protocol + `QuoteResult`/`QuoteRange`/`SymbolMatch`/`HistoricalPoint`/`QuoteProviderError`; declares `batchQuotes(symbols:)` with a fan-out default impl), `FXProvider.swift` (`FXResult` + `FXProviderError`), `HTTPClient.swift` (8s URLSession wrapper, `Folio/0.1` UA, 429→`.rateLimited`, decimal-safe number parsing via `decimalFromJSONNumber`), `MockQuoteProvider.swift` (LCG walk lifted from `data.jsx`; conforms to both protocols), `YahooQuoteProvider.swift` (quote+FX via `query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=1d`; `.`→`-` symbol fix for BRK.B; `historical`/`search` throw `.notImplemented`), `CoinGeckoQuoteProvider.swift` (overrides `batchQuotes` to single `simple/price?ids=a,b,c` call — fan-out per symbol was instantly rate-limited; symbol map points MATIC at `polygon-ecosystem-token` since the old `matic-network` id returns `{}` post-rebrand), `QuoteRefreshCoordinator.swift` (`@Observable @MainActor`; splits assets into stock/crypto specs by value before entering task groups so no `@Model` ref crosses the actor boundary; FX pair set computed from distinct (txn.currency, base) + (asset.currency, base) pairs; today's `FXRate.makeKey` makes refresh idempotent on the day; partial success → `.ok`, total failure → `.failed`). New UI: `Folio/Sources/Features/Shell/ToolbarRefreshStatus.swift` — compact button (8pt dot + monospace "Updated 2m ago" / "Refreshing…" / "Offline"; green/amber/red driven by status + 30-min staleness; click invokes `refreshAll`; ⌘R bound globally via `CommandGroup(after: .toolbar)` in `FolioApp`). `FolioApp` now owns the coordinator (`@State`), env-injects it, fires `.task { await refreshAll(); startTimer() }`. `SidebarFooter` rewritten to compute live total via `HoldingsReducer.reduceByAsset(...)` over `@Query` transactions; FX closure stays USD-only in M4 (cross-currency lights up in M10 when the base-currency picker ships). 11 new tests added (`MockQuoteProviderTests` × 6, `QuoteRefreshCoordinatorTests` × 5); 30 tests green. Smoke: `xcodebuild build` + `open Folio.app` → toolbar dot flips green within ~3s, sidebar footer shows live total (≈$580k at current quotes), DB has 10 `yahoo` + 6 `coingecko` `ZPRICEQUOTE` rows per refresh on top of the seed's 16. **Note:** SourceKit reported its usual cascade of "Cannot find type X in scope" errors during multi-file authoring; all cleared after `tuist generate` + `xcodebuild build` was real-green.
 
 ### M5 — Stocks & ETFs screen
 Spec: `project/stocks.jsx`.

@@ -30,11 +30,13 @@ struct MacShell: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        // Search and Add are split into separate ToolbarItems so the Add
-        // button's borderedProminent tint doesn't bleed onto the search stub's
-        // container — macOS groups sibling controls inside one ToolbarItem.
+        // Each control gets its own ToolbarItem so styling doesn't bleed
+        // across siblings — macOS groups sibling controls inside one ToolbarItem.
         ToolbarItem(placement: .primaryAction) {
             ToolbarSearchStub()
+        }
+        ToolbarItem(placement: .primaryAction) {
+            ToolbarRefreshStatus()
         }
         ToolbarItem(placement: .primaryAction) {
             Button {
