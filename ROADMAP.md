@@ -24,7 +24,7 @@
 | M3 — Domain model + persistence | ✓ done (2026-05-20) | SwiftData schema (6 entities; `Transaction` → `PortfolioTransaction` to avoid SwiftUI collision) · `Money` value type (Decimal+ISO, decomposed in storage) · `HoldingsReducer` `@MainActor` with closure-injected price+FX · weighted-avg cost basis (sells reduce qty and cost proportionally) · seed loader idempotent on empty DB · 19 tests green · sidebar footer now `@Query`-bound |
 | M4 — Quote + FX service | ✓ done (2026-05-21) | `QuoteProvider` + `FXProvider` protocols · `MockQuoteProvider` (LCG walk + fixed FX) · `YahooQuoteProvider` (stocks/ETFs/FX, `.`→`-` symbol fix for BRK.B) · `CoinGeckoQuoteProvider` (batched `simple/price` call, MATIC→`polygon-ecosystem-token` post-rebrand) · `QuoteRefreshCoordinator` `@Observable @MainActor` dispatching by `AssetKind` · launch + ⌘R + 15-min timer · compact toolbar status pill (green/amber/red dot, click to refresh) · `SidebarFooter` now live via `HoldingsReducer` · 30 tests green (added 11) |
 | M4.5 — Pre-M5 audit + Swift 6 bump | ✓ done (2026-05-21) | Full code review of M0–M4. Fixed 5 bugs: FX cache UTC-vs-local mismatch in `QuoteRefreshCoordinator.collectFXPairs`, non-stable `Holding.id` (now derived from asset/account `PersistentIdentifier`), `MetricBadge` `.neutral` fall-through to `.negative`, `HoldingsReducer` over-sell now clamps at qty 0, `PriceQuote` rows now dedupe per (asset, source) within 60s. Bumped to Swift 6.0 + `SWIFT_STRICT_CONCURRENCY=complete` — codebase was already clean, zero new diagnostics. Test coverage near-doubled: 30 → 54 (Money decimal correctness incl. 0.1+0.2=0.3, cross-currency cost basis, full `PortfolioMetrics` suite, coordinator partial-success/total-fail, Yahoo/CoinGecko URL builders extracted + tested) |
-| M5 — Stocks & ETFs screen | ☐ not started | |
+| M5 — Stocks & ETFs screen | ✓ done (2026-05-21) | `StocksScreen` (`@Query` txns + quotes + settings) · 3-card summary (Market Value · Unrealized P&L w/ % badge · Dividends YTD live-computed from `.dividend` txns) · `FilterPill` row (All accounts + per-broker, alphabetized) · click-to-sort table headers w/ chevron indicator + `Sort by` menu fallback · custom-laid-out row HStack w/ `TickerLogo` letter-mark · row hover via `theme.rowHover` · footer totals (count + MV + P&L $ + P&L % + 100.0%) · USD-only `fxAt` until M10 base-currency picker · 6 new tests (`StocksRowsBuilderTests`) · 60 tests green |
 | M6 — Crypto screen | ☐ not started | |
 | M7 — Transactions screen | ☐ not started | |
 | M8 — Overview MVP (chart-less) | ☐ not started | Chart slot reserved pending open question |
@@ -97,13 +97,13 @@ The repo `global_wallet` was empty when the project began (just a README). Produ
 Items surfaced by the 2026-05-21 pre-M5 review that were intentionally **not** fixed in the M4.5 commit — tagged with the milestone where they'll naturally come up. Strike through as each lands.
 
 **Tackle during M5 (when touching this code anyway):**
-- `Folio/Sources/DesignSystem/Formatters.swift` — `FolioFormat` is dead in production (only `DesignSystemPreview` consumes it). Move next to the preview as a private helper, or delete and inline.
-- `AppRouter.swift:5` — doc-comment references a non-existent `.environment(\.appRouter, …)` key path. Real injection is `.environment(router)` via `@Observable`. One-line fix.
-- `PlaceholderScreen.swift:26–32` — `switch Destination` has a `default` arm catching unreachable v2 destinations. Make exhaustive.
-- `SidebarItem.swift:53,61,65` — uses raw `Color.primary` / `.white` instead of theme tokens. Add `theme.hoverBg` + `theme.onAccent` or document the deviations.
+- ~~`AppRouter.swift:5` — doc-comment references a non-existent `.environment(\.appRouter, …)` key path. Real injection is `.environment(router)` via `@Observable`. One-line fix.~~ **Done 2026-05-21** (M5).
+- ~~`PlaceholderScreen.swift:26–32` — `switch Destination` has a `default` arm catching unreachable v2 destinations. Make exhaustive.~~ **Done 2026-05-21** (M5).
+- `Folio/Sources/DesignSystem/Formatters.swift` — `FolioFormat` is dead in production (only `DesignSystemPreview` consumes it). Still dead after M5 (the Stocks screen formats via `Money.formatted()` + inline number/percent helpers in row views). Re-tag for M10 or inline into the preview.
+- `SidebarItem.swift:53,61,65` — uses raw `Color.primary` / `.white` instead of theme tokens. Add `theme.hoverBg` + `theme.onAccent` or document the deviations. (Deferred — not touched in M5.)
 - `MockQuoteProvider.swift:48–51,75` — `Decimal(string: "0.92")!` force-unwraps. Programmer-controlled literals, so won't crash, but worth tidying.
-- `SidebarFooter.swift:38–51` — recomputes the reducer on every body redraw. Fine at 34 txns; profile when M5 inflates ledger volume. Consider memoizing via `@State` or a small view model.
-- Empirically verify the `Holding.ID` stability fix once the Stocks table lands — `ForEach(\.id)` rows should keep selection/hover across `@Query` updates.
+- ~~`SidebarFooter.swift:38–51` — recomputes the reducer on every body redraw.~~ **Stale**: SidebarFooter no longer hosts the reducer (it became refresh-status-only post-M4); item resolved by code change, not action.
+- Empirically verify the `Holding.ID` stability fix once the Stocks table lands — `ForEach(\.id)` rows should keep selection/hover across `@Query` updates. **Verify next session** by hovering rows during a ⌘R refresh — hover state should not flicker.
 
 **Tackle during M10 (settings + polish):**
 - `MacShell.swift:49` — Add-holding bound to `⌘N`, conflicts with the macOS standard "New Window". Pick `⌘+` or `⌘⇧N`.

@@ -28,7 +28,8 @@ struct PlaceholderScreen: View {
         case .stocks:       return "Coming in M5"
         case .crypto:       return "Coming in M6"
         case .transactions: return "Coming in M7"
-        default:            return "Coming in v2"
+        case .dividends, .fees, .accounts, .importCSV:
+            return "Coming in v2"
         }
     }
 }

@@ -26,7 +26,12 @@ struct MacShell: View {
 
     @ViewBuilder
     private func detailView(for destination: Destination) -> some View {
-        PlaceholderScreen(destination: destination)
+        switch destination {
+        case .stocks:
+            StocksScreen()
+        default:
+            PlaceholderScreen(destination: destination)
+        }
     }
 
     @ToolbarContentBuilder
