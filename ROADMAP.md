@@ -27,7 +27,8 @@
 | M5 — Stocks & ETFs screen | ✓ done (2026-05-21) | `StocksScreen` (`@Query` txns + quotes + settings) · 3-card summary (Market Value · Unrealized P&L w/ % badge · Dividends YTD live-computed from `.dividend` txns) · `FilterPill` row (All accounts + per-broker, alphabetized) · click-to-sort table headers w/ chevron indicator + `Sort by` menu fallback · custom-laid-out row HStack w/ `TickerLogo` letter-mark · row hover via `theme.rowHover` · footer totals (count + MV + P&L $ + P&L % + 100.0%) · USD-only `fxAt` until M10 base-currency picker · 6 new tests (`StocksRowsBuilderTests`) · 60 tests green |
 | M6 — Crypto screen | ✓ done (2026-05-21) | `CryptoScreen` mirrors M5 shape but rows are expandable per-wallet · 3-card summary (Market Value · Unrealized P&L w/ % badge · Staking YTD live-computed from `.stake` txns on crypto kinds in current year) · wallet filter pills with leading colored `Dot` (account hex) + Expand all / Collapse all (disabled when a wallet is selected) + sort menu · click-to-sort headers (chevron column un-sortable) · `CryptoLogo` (round, palette BTC/ETH/SOL/LINK/MATIC/USDC, `$` glyph for USDC) lives under `DesignSystem/Components/` · aggregate row clickable to toggle expansion via `expanded: Set<String>` keyed by ticker (defaults open BTC + ETH per JSX) · sub-rows show indented `Dot(account.colorHex)` + wallet name + "X% of holding" + qty/cost/—/MV/PnL$/PnL%/alloc% (price intentionally `—` since asset-level) · wallet filter (selected) pre-filters txns to that account (M5 pattern) and suppresses sub-rows + chevron, shows `AccountBadge` on the aggregate · allocation denominator = crypto subtotal in both rows and sub-rows so footer reads `100.0%` · 10 new tests (`CryptoRowsBuilderTests`) · 70 tests green (60 → 70) |
 | M7 — Transactions screen | ✓ done (2026-05-21) | `TransactionsScreen` (`@Query` txns desc) · 3-card summary (Transactions YTD count + accounts · Net Inflows YTD = (sell+div+deposit)−(buy+withdraw), tone-tinted · Income YTD = div+stake) · 8 type pills (All + all 7 `TransactionType` cases — extends JSX's 5) · static "This month · MMMM yyyy" label + disabled Export stub · click-to-sort headers w/ chevron · per-row `TypeBadgeStyle` (buy=green, sell/withdraw=red, dividend=blue, stake=amber, deposit/transfer=neutral) · signed Total (+/− by type) tinted green for sell/dividend · `AccountBadge` per row · `···` overflow stub · footer w/ net total · USD-only `fxAt` until M10 · 8 new tests (`TransactionsRowsBuilderTests` — empty in-memory container, fixture-built txns w/ injectable `now`) · 78 tests green (70 → 78) |
-| M8 — Overview MVP (chart-less) | ☐ not started | Chart slot reserved pending open question |
+| M8 — Overview MVP (chart-less) | ✓ done (2026-05-22) | `OverviewScreen` (`@Query` txns + quotes + settings) · 4 metric cards: Total Value (sub: "N positions across M accounts") · All-time Gain w/ % badge (sub: "Since MMM yyyy" from earliest txn) · YTD Performance honestly stubbed `—` "Available with M8.5" · Invested Capital (sub: "Cost basis across N accounts") · `OverviewChartCard` placeholder w/ visible `PeriodPills($range)` and centered 280pt empty state ("Chart available with M8.5") so M8.5 is a pure drop-in · `AllocationCard` w/ Stocks+Crypto split bar + legend rows (USD + %) backed by new `OverviewMetricsBuilder.allocation(holdings:baseCurrency:)` lumping stock+etf into Stocks · `AnnualPerformanceCard` reserves layout w/ column headers + "Historical comparisons available with M8.5" body · MacShell now routes `.overview` → `OverviewScreen` (was `PlaceholderScreen`) · 9 new tests (`OverviewMetricsBuilderTests` — earliest-date, positions count, accountsCount, allocation sums to 100, ordering, empty-state) · 87 tests green (78 → 87) |
+| M8.5 — Real historical chart | ☐ not started | Real holdings × historical closes (option (a), resolved 2026-05-22) |
 | M9 — Add Transaction flow | ☐ not started | |
 | M10 — Settings + polish | ☐ not started | |
 | M11 — Test + verify | ☐ not started | |
@@ -78,16 +79,13 @@ The repo `global_wallet` was empty when the project began (just a README). Produ
 | Over-sell policy | `HoldingsReducer` clamps sells at current qty (no negative-qty buckets, no shorts in MVP) — over-sized sells log a warning and the excess is dropped |
 | PriceQuote dedupe | Refreshes within 60s of the last quote for the same (asset, source) update in place; older rows are preserved (historicals stay valid for M8) |
 | Swift mode | Swift 6.0 language mode + `SWIFT_STRICT_CONCURRENCY=complete` (bumped 2026-05-21 during the pre-M5 audit — zero new diagnostics surfaced) |
+| Overview chart | **Real historical** holdings × historical closes (option (a), resolved 2026-05-22). Implemented in a dedicated **M8.5** milestone after M8 ships chart-less. Snapshot approximation rejected (rewrites history); defer-to-v2 rejected (leaves a hole in the designed layout). |
 
 ---
 
 ## Open questions (do not block MVP)
 
-- **Overview chart strategy** — choose between:
-  - (a) real historical portfolio value computed from holdings × historical closes,
-  - (b) snapshot approximation (assume current holdings always held),
-  - (c) defer chart to v2.
-  Plan ships Overview MVP **without** the chart; M8 leaves a layout slot. Decide before M8 implementation.
+- ~~**Overview chart strategy** — choose between (a) real historical (holdings × historical closes), (b) snapshot approximation (current holdings projected backward), (c) defer to v2. Plan ships Overview MVP **without** the chart; M8 leaves a layout slot.~~ **Resolved 2026-05-22:** (a) real historical, split into its own milestone **M8.5** so M8 stays focused on metrics + allocation + annual table. (b) rejected as dishonest (silently rewrites history with current holdings); (c) rejected because the prototype's Overview is designed around the chart slot.
 - ~~**Quote refresh cadence** — proposed: on-launch + manual `⌘R` + 15-min foreground timer; revisit at M4.~~ **Resolved 2026-05-21:** on-launch + manual ⌘R + 15-min foreground timer (as proposed). Implemented in `QuoteRefreshCoordinator.startTimer(interval: 900)`.
 
 ---
@@ -256,7 +254,24 @@ Spec: `project/overview.jsx`.
 - 4 metric cards: Total Value, All-time Gain ($ + %), YTD Performance, Invested Capital — all computed from transactions × current quotes via `PortfolioMetrics`.
 - Asset Allocation split bar (Stocks / Crypto / Cash) using current market values.
 - Annual Performance table with BEST/WORST badges — partial-year rows allowed when quote history is incomplete.
-- **Reserved chart slot** in the layout; populated once the open question is answered.
+- **Reserved chart slot** in the layout — render a placeholder Card sized to the eventual chart so M8.5 is a pure drop-in. Include the PeriodPills control (1M / 3M / 6M / 1Y / All) wired to a `@State range` that M8.5 will read.
+
+### M8.5 — Real historical chart
+Spec: chart subtree in `project/overview.jsx`. Implements option (a) from the resolved open question — real holdings × historical closes, not snapshot approximation.
+
+Scope:
+- **Historical quote storage**: extend `PriceQuote` (or add a sibling `HistoricalQuote` entity if `PriceQuote`'s current `(asset, source, asOf)` shape becomes awkward — decide at implementation). Indexed by `(asset, date)`; daily granularity is enough for MVP.
+- **Provider work**: implement `QuoteProvider.historical(symbol:, range:)` for Yahoo (`/v8/finance/chart/{sym}?interval=1d&range=...`) and CoinGecko (`/coins/{id}/market_chart?vs_currency=usd&days=...`). Both currently throw `.notImplemented`.
+- **Historical FX**: extend `FXRate` queries to support a date param, or add `FXRate.historical(from:to:on:)`. Yahoo FX endpoint already supports historical via the same chart URL.
+- **Time-series reducer**: new `PortfolioHistoryReducer` (sibling of `HoldingsReducer`) — walks transactions chronologically and, for each day in the requested range, emits `(date, totalValueInBase)`. Reuses `HoldingsReducer` state at each step. `@MainActor`, closure-injected price+FX lookups (same DI pattern as M3).
+- **Refresh policy**: lazy fetch on first range selection; cache forever (historicals don't change). `QuoteRefreshCoordinator` does NOT eagerly refresh historicals — only current quotes. Add a manual "Refresh history" affordance only if it turns out to be needed.
+- **Chart UI**: Swift Charts `LineMark` over the reducer's series. Theme-aware stroke. Hover crosshair shows date + value + delta-from-start. PeriodPills (1M / 3M / 6M / 1Y / All) drive `@State range`; the "All" pill spans from the earliest transaction date.
+- **Edge cases**: missing historical closes (asset newly added, provider gap) → linear-interpolate forward from the last known close, with a subtle visual indicator (e.g. dashed segment) — alternative is to drop the day; decide once a real gap is observed.
+- **Tests**: `PortfolioHistoryReducer` deterministic over a fixed transaction fixture + canned historical series; URL builders for both providers' historical endpoints; FX historical lookup.
+
+Open sub-questions (resolve during M8.5 planning):
+- Where does the historical fetch get triggered — on first paint of Overview, or only on first PeriodPills interaction?
+- Are intraday data points needed for the 1M view, or is daily fine? (MVP answer is probably daily; revisit if it feels stale.)
 
 ### M9 — Add Transaction flow
 - `+ Add holding` toolbar action → sheet.

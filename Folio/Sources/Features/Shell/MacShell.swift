@@ -27,6 +27,8 @@ struct MacShell: View {
     @ViewBuilder
     private func detailView(for destination: Destination) -> some View {
         switch destination {
+        case .overview:
+            OverviewScreen()
         case .stocks:
             StocksScreen()
         case .crypto:
