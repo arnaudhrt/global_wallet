@@ -27,7 +27,31 @@ struct YahooQuoteProvider: QuoteProvider, FXProvider {
     }
 
     func historical(symbol: String, range: QuoteRange) async throws -> [HistoricalPoint] {
-        throw QuoteProviderError.notImplemented
+        let envelope = try await fetchChart(symbol: symbol, range: range.yahooRange, interval: "1d")
+        guard let result = envelope.chart.result?.first else {
+            if let err = envelope.chart.error {
+                throw QuoteProviderError.network(err.description ?? err.code ?? "yahoo error")
+            }
+            return []
+        }
+        guard
+            let timestamps = result.timestamp,
+            let closes = result.indicators?.quote.first?.close
+        else {
+            return []
+        }
+        // Closes can carry nils (holidays, halted symbols); skip those rather
+        // than forward-fill at the provider layer — the reducer handles gaps.
+        var points: [HistoricalPoint] = []
+        points.reserveCapacity(timestamps.count)
+        for (i, ts) in timestamps.enumerated() where i < closes.count {
+            guard let close = closes[i] else { continue }
+            points.append(HistoricalPoint(
+                date: Date(timeIntervalSince1970: TimeInterval(ts)),
+                close: decimalFromJSONNumber(close)
+            ))
+        }
+        return points
     }
 
     func search(query: String) async throws -> [SymbolMatch] {
@@ -53,6 +77,14 @@ struct YahooQuoteProvider: QuoteProvider, FXProvider {
         )
     }
 
+    func historical(from: String, to: String, range: QuoteRange) async throws -> [HistoricalFXPoint] {
+        if from == to {
+            return []
+        }
+        let points = try await historical(symbol: "\(from)\(to)=X", range: range)
+        return points.map { HistoricalFXPoint(date: $0.date, rate: $0.close) }
+    }
+
     // MARK: - Internal
 
     /// Yahoo uses `BRK-B` for what we (and most data sources) call `BRK.B`.
@@ -62,20 +94,17 @@ struct YahooQuoteProvider: QuoteProvider, FXProvider {
         symbol.replacingOccurrences(of: ".", with: "-")
     }
 
-    static func chartURL(symbol: String) -> URL? {
+    static func chartURL(symbol: String, range: String = "1d", interval: String = "1d") -> URL? {
         var components = URLComponents(string: "https://query1.finance.yahoo.com/v8/finance/chart/\(yahooSymbol(for: symbol))")!
         components.queryItems = [
-            URLQueryItem(name: "interval", value: "1d"),
-            URLQueryItem(name: "range", value: "1d"),
+            URLQueryItem(name: "interval", value: interval),
+            URLQueryItem(name: "range", value: range),
         ]
         return components.url
     }
 
     private func fetchMeta(symbol: String) async throws -> ChartMeta {
-        guard let url = Self.chartURL(symbol: symbol) else {
-            throw QuoteProviderError.unsupportedSymbol(symbol)
-        }
-        let envelope = try await client.getJSON(url, as: ChartEnvelope.self)
+        let envelope = try await fetchChart(symbol: symbol, range: "1d", interval: "1d")
         guard let meta = envelope.chart.result?.first?.meta else {
             if let err = envelope.chart.error {
                 throw QuoteProviderError.network(err.description ?? err.code ?? "yahoo error")
@@ -83,6 +112,13 @@ struct YahooQuoteProvider: QuoteProvider, FXProvider {
             throw QuoteProviderError.unsupportedSymbol(symbol)
         }
         return meta
+    }
+
+    private func fetchChart(symbol: String, range: String, interval: String) async throws -> ChartEnvelope {
+        guard let url = Self.chartURL(symbol: symbol, range: range, interval: interval) else {
+            throw QuoteProviderError.unsupportedSymbol(symbol)
+        }
+        return try await client.getJSON(url, as: ChartEnvelope.self)
     }
 
     // MARK: - Wire shape
@@ -96,6 +132,14 @@ struct YahooQuoteProvider: QuoteProvider, FXProvider {
     }
     private struct ChartResult: Decodable {
         let meta: ChartMeta
+        let timestamp: [Int]?
+        let indicators: ChartIndicators?
+    }
+    private struct ChartIndicators: Decodable {
+        let quote: [ChartQuote]
+    }
+    private struct ChartQuote: Decodable {
+        let close: [Double?]?
     }
     private struct ChartMeta: Decodable {
         let regularMarketPrice: Double?

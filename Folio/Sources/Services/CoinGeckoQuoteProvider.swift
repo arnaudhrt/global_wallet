@@ -102,7 +102,49 @@ struct CoinGeckoQuoteProvider: QuoteProvider {
     }
 
     func historical(symbol: String, range: QuoteRange) async throws -> [HistoricalPoint] {
-        throw QuoteProviderError.notImplemented
+        guard let id = coinId(for: symbol) else {
+            throw QuoteProviderError.unsupportedSymbol(symbol)
+        }
+        guard let url = Self.marketChartURL(coinID: id, days: range.days()) else {
+            throw QuoteProviderError.unsupportedSymbol(symbol)
+        }
+        let body = try await client.getJSON(url, as: MarketChart.self)
+        // `prices` is a list of `[epoch_ms, price]` tuples. Granularity is
+        // auto-selected by CoinGecko: hourly when days <= 90, daily otherwise.
+        // We coarsen sub-daily points to UTC midnight here so the reducer's
+        // forward-fill works consistently across ranges.
+        var seenDays: Set<String> = []
+        var points: [HistoricalPoint] = []
+        let day = DateFormatter()
+        day.dateFormat = "yyyy-MM-dd"
+        day.timeZone = TimeZone(identifier: "UTC")
+        for entry in body.prices {
+            guard entry.count == 2 else { continue }
+            let date = Date(timeIntervalSince1970: TimeInterval(entry[0] / 1000))
+            let key = day.string(from: date)
+            if seenDays.contains(key) { continue }
+            seenDays.insert(key)
+            points.append(HistoricalPoint(
+                date: date,
+                close: decimalFromJSONNumber(entry[1])
+            ))
+        }
+        return points
+    }
+
+    /// Constructs the `market_chart` URL. `days` should match
+    /// `QuoteRange.days()`; `interval=daily` keeps the response small for
+    /// long ranges (free tier doesn't honor it on short ranges and returns
+    /// hourly — we coarsen client-side).
+    static func marketChartURL(coinID: String, days: Int) -> URL? {
+        guard !coinID.isEmpty, days > 0 else { return nil }
+        var components = URLComponents(string: "https://api.coingecko.com/api/v3/coins/\(coinID)/market_chart")!
+        components.queryItems = [
+            URLQueryItem(name: "vs_currency", value: "usd"),
+            URLQueryItem(name: "days", value: String(days)),
+            URLQueryItem(name: "interval", value: "daily"),
+        ]
+        return components.url
     }
 
     func search(query: String) async throws -> [SymbolMatch] {
@@ -112,5 +154,9 @@ struct CoinGeckoQuoteProvider: QuoteProvider {
     private struct CoinEntry: Decodable {
         let usd: Double?
         let last_updated_at: Int?
+    }
+
+    private struct MarketChart: Decodable {
+        let prices: [[Double]]
     }
 }

@@ -35,4 +35,25 @@ enum PortfolioMetrics {
         }
         return result.mapValues { $0 / total * 100 }
     }
+
+    /// YTD performance as a percentage (0…100 range), computed from a chart-
+    /// shaped history series. Looks up the first point on/after Jan 1 of `now`'s
+    /// year and compares it to the latest point. Returns nil if the series
+    /// doesn't span Jan 1, or if the Jan 1 value is zero (no portfolio yet).
+    static func ytdPerformance(history: [HistoryPoint], now: Date = .now) -> Double? {
+        guard !history.isEmpty else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC") ?? .current
+        let year = cal.component(.year, from: now)
+        guard let jan1 = cal.date(from: DateComponents(year: year, month: 1, day: 1)) else { return nil }
+
+        let sorted = history.sorted(by: { $0.date < $1.date })
+        guard let start = sorted.first(where: { $0.date >= jan1 }) else { return nil }
+        guard let end = sorted.last else { return nil }
+        let startAmount = start.total.amount
+        guard startAmount > 0 else { return nil }
+
+        let pct = (end.total.amount - startAmount) / startAmount * 100
+        return Double(truncating: pct as NSDecimalNumber)
+    }
 }

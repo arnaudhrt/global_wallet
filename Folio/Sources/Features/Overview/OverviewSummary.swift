@@ -3,9 +3,9 @@ import SwiftUI
 /// Four-card metric row at the top of the Overview screen.
 /// Total Value · All-time Gain (badge %) · YTD Performance · Invested Capital.
 ///
-/// YTD% is intentionally `—` in M8 — real year-over-year computation requires
-/// historical quotes, which land in M8.5. The slot stays visible so M8.5 is a
-/// pure data-fill, not a layout change.
+/// `ytdPct` arrives from `PortfolioMetrics.ytdPerformance(history:)` (M8.5). Nil
+/// when the series doesn't reach back to Jan 1 — in that case we keep the `—`
+/// placeholder with a friendlier sublabel.
 struct OverviewSummary: View {
     let totalValue: Money
     let positionsCount: Int
@@ -14,6 +14,7 @@ struct OverviewSummary: View {
     let allTimeGainPct: Double?
     let earliestTransactionDate: Date?
     let investedCapital: Money
+    let ytdPct: Double?
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -30,9 +31,9 @@ struct OverviewSummary: View {
             )
             Metric(
                 label: "YTD Performance",
-                value: "—",
-                sub: "Available with M8.5",
-                subTone: .neutral
+                value: ytdValue,
+                sub: ytdSub,
+                subTone: ytdSubTone
             )
             Metric(
                 label: "Invested Capital",
@@ -65,6 +66,23 @@ struct OverviewSummary: View {
         let sign = pct >= 0 ? "+" : ""
         let text = "\(sign)\(String(format: "%.1f", pct))%"
         return MetricBadge(text: text, tone: pct >= 0 ? .positive : .negative)
+    }
+
+    private var ytdValue: String {
+        guard let pct = ytdPct else { return "—" }
+        let sign = pct >= 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.2f", pct))%"
+    }
+
+    private var ytdSub: String {
+        guard ytdPct != nil else { return "Available once history covers Jan 1" }
+        let cal = Calendar(identifier: .gregorian)
+        return "Since Jan 1, \(cal.component(.year, from: Date()))"
+    }
+
+    private var ytdSubTone: FolioTone {
+        guard let pct = ytdPct else { return .neutral }
+        return pct >= 0 ? .positive : .negative
     }
 
     private func signedFormatted(_ m: Money) -> String {

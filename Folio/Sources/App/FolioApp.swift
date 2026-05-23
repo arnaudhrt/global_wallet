@@ -5,19 +5,29 @@ import SwiftData
 struct FolioApp: App {
     @State private var router = AppRouter()
     @State private var coordinator: QuoteRefreshCoordinator
+    @State private var historicalService: HistoricalQuoteService
     private let container: ModelContainer
 
     init() {
         do {
             let container = try ModelContainer.folio()
             self.container = container
+            let yahoo = YahooQuoteProvider()
+            let coinGecko = CoinGeckoQuoteProvider()
             let coordinator = QuoteRefreshCoordinator(
                 container: container,
-                stocks: YahooQuoteProvider(),
-                crypto: CoinGeckoQuoteProvider(),
-                fx: YahooQuoteProvider()
+                stocks: yahoo,
+                crypto: coinGecko,
+                fx: yahoo
+            )
+            let historicalService = HistoricalQuoteService(
+                container: container,
+                stocks: yahoo,
+                crypto: coinGecko,
+                fx: yahoo
             )
             self._coordinator = State(initialValue: coordinator)
+            self._historicalService = State(initialValue: historicalService)
         } catch {
             fatalError("Failed to build Folio ModelContainer: \(error)")
         }
@@ -28,6 +38,7 @@ struct FolioApp: App {
             MacShell()
                 .environment(router)
                 .environment(coordinator)
+                .environment(historicalService)
                 .folioTheme()
                 .frame(minWidth: 960, minHeight: 600)
                 .task {

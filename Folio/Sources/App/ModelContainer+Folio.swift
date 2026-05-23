@@ -12,6 +12,7 @@ extension ModelContainer {
             Asset.self,
             PortfolioTransaction.self,
             PriceQuote.self,
+            HistoricalQuote.self,
             FXRate.self,
             AppSettings.self,
         ])

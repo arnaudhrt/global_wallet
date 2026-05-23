@@ -32,7 +32,26 @@ actor MockQuoteProvider: QuoteProvider, FXProvider {
     }
 
     func historical(symbol: String, range: QuoteRange) async throws -> [HistoricalPoint] {
-        throw QuoteProviderError.notImplemented
+        // Reproducible synthetic series — walks backward from a per-symbol seed
+        // so each call returns the same points. Tests use this to drive the
+        // history reducer without hitting the network.
+        let days = range.days()
+        var local = Int(seedBase &+ symbol.unicodeScalars.reduce(into: 0) { $0 = $0 &+ Int($1.value) })
+        var price = Decimal(100)
+        var points: [HistoricalPoint] = []
+        points.reserveCapacity(days)
+        let cal = Calendar(identifier: .gregorian)
+        let today = cal.startOfDay(for: Date())
+        for offset in 0..<days {
+            local = (local &* 9301 &+ 49297) % 233280
+            let r = Decimal(local) / 233280
+            let step = (r - Decimal(string: "0.42")!) * Decimal(string: "1.6")!
+            price = max(Decimal(string: "0.01")!, price + step)
+            if let d = cal.date(byAdding: .day, value: -(days - 1 - offset), to: today) {
+                points.append(HistoricalPoint(date: d, close: price))
+            }
+        }
+        return points
     }
 
     func search(query: String) async throws -> [SymbolMatch] {
@@ -42,16 +61,37 @@ actor MockQuoteProvider: QuoteProvider, FXProvider {
     // MARK: - FXProvider
 
     func rate(from: String, to: String) async throws -> FXResult {
-        let rate: Decimal
+        let rate = try fxRate(from: from, to: to)
+        return FXResult(from: from, to: to, rate: rate, asOf: Date())
+    }
+
+    func historical(from: String, to: String, range: QuoteRange) async throws -> [HistoricalFXPoint] {
+        if from == to { return [] }
+        let rate = try fxRate(from: from, to: to)
+        let days = range.days()
+        let cal = Calendar(identifier: .gregorian)
+        let today = cal.startOfDay(for: Date())
+        var points: [HistoricalFXPoint] = []
+        points.reserveCapacity(days)
+        for offset in 0..<days {
+            if let d = cal.date(byAdding: .day, value: -(days - 1 - offset), to: today) {
+                // Flat series — tests don't need realistic FX drift, just a
+                // stable rate at each requested date.
+                points.append(HistoricalFXPoint(date: d, rate: rate))
+            }
+        }
+        return points
+    }
+
+    private func fxRate(from: String, to: String) throws -> Decimal {
         switch (from, to) {
-        case let (a, b) where a == b: rate = 1
-        case ("USD", "EUR"): rate = Decimal(string: "0.92")!
-        case ("EUR", "USD"): rate = Decimal(string: "1.087")!
-        case ("USD", "GBP"): rate = Decimal(string: "0.79")!
-        case ("GBP", "USD"): rate = Decimal(string: "1.266")!
+        case let (a, b) where a == b: return 1
+        case ("USD", "EUR"): return Decimal(string: "0.92")!
+        case ("EUR", "USD"): return Decimal(string: "1.087")!
+        case ("USD", "GBP"): return Decimal(string: "0.79")!
+        case ("GBP", "USD"): return Decimal(string: "1.266")!
         default: throw FXProviderError.unsupportedPair(from, to)
         }
-        return FXResult(from: from, to: to, rate: rate, asOf: Date())
     }
 
     // MARK: - Internal walk

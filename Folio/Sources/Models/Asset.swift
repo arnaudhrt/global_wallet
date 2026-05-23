@@ -16,6 +16,9 @@ final class Asset {
     @Relationship(deleteRule: .cascade, inverse: \PriceQuote.asset)
     var quotes: [PriceQuote] = []
 
+    @Relationship(deleteRule: .cascade, inverse: \HistoricalQuote.asset)
+    var historicalQuotes: [HistoricalQuote] = []
+
     init(
         id: UUID = UUID(),
         symbol: String,

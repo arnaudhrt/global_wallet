@@ -28,13 +28,25 @@ final class MockQuoteProviderTests: XCTestCase {
         XCTAssertNotEqual(qa.price, qb.price)
     }
 
-    func testHistoricalAndSearchAreNotImplemented() async {
+    func testSearchIsNotImplemented() async {
         let p = MockQuoteProvider()
-        await XCTAssertThrowsErrorAsync(try await p.historical(symbol: "AAPL", range: .y1)) { err in
-            XCTAssertEqual(err as? QuoteProviderError, .notImplemented)
-        }
         await XCTAssertThrowsErrorAsync(try await p.search(query: "App")) { err in
             XCTAssertEqual(err as? QuoteProviderError, .notImplemented)
+        }
+    }
+
+    func testHistoricalReturnsDeterministicSeries() async throws {
+        // M8.5 — Mock now produces a reproducible backward LCG walk so the
+        // history reducer can be tested against it without hitting the network.
+        let a = MockQuoteProvider(seedBase: 5)
+        let b = MockQuoteProvider(seedBase: 5)
+        let aPoints = try await a.historical(symbol: "AAPL", range: .m1)
+        let bPoints = try await b.historical(symbol: "AAPL", range: .m1)
+        XCTAssertFalse(aPoints.isEmpty)
+        XCTAssertEqual(aPoints.count, QuoteRange.m1.days())
+        XCTAssertEqual(aPoints.map(\.close), bPoints.map(\.close))
+        for p in aPoints {
+            XCTAssertGreaterThan(p.close, 0)
         }
     }
 
