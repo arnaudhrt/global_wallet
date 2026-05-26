@@ -19,7 +19,7 @@ struct MacShell: View {
                 .toolbar { toolbarContent }
                 .toolbarBackground(.hidden, for: .windowToolbar)
                 .sheet(isPresented: $router.showAddSheet) {
-                    AddTransactionStubSheet()
+                    AddTransactionSheet()
                 }
         }
     }
