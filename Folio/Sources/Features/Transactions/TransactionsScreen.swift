@@ -10,6 +10,7 @@ import SwiftData
 /// the base-currency picker ships.
 struct TransactionsScreen: View {
     @Environment(\.theme) private var theme
+    @Environment(AppRouter.self) private var router
 
     @Query(sort: \PortfolioTransaction.date, order: .reverse)
     private var transactions: [PortfolioTransaction]
@@ -21,30 +22,41 @@ struct TransactionsScreen: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                TransactionsSummary(
-                    ytdCount: ytdTxns.count,
-                    accountsCount: TransactionsRowsBuilder.accountsCount(in: ytdTxns),
-                    netInflowsYTD: Money(
-                        amount: TransactionsRowsBuilder.netInflowsYTD(from: transactions),
-                        currency: baseCurrency
-                    ),
-                    incomeYTD: Money(
-                        amount: TransactionsRowsBuilder.incomeYTD(from: transactions),
-                        currency: baseCurrency
+            if transactions.isEmpty {
+                EmptyState(
+                    icon: "list.bullet.rectangle",
+                    headline: "No transactions yet",
+                    sub: "Add a buy, sell, deposit, or dividend to get started.",
+                    ctaLabel: "Add a transaction",
+                    onCTA: { router.showAddSheet = true }
+                )
+                .frame(maxWidth: .infinity, minHeight: 360)
+            } else {
+                VStack(alignment: .leading, spacing: 20) {
+                    TransactionsSummary(
+                        ytdCount: ytdTxns.count,
+                        accountsCount: TransactionsRowsBuilder.accountsCount(in: ytdTxns),
+                        netInflowsYTD: Money(
+                            amount: TransactionsRowsBuilder.netInflowsYTD(from: transactions),
+                            currency: baseCurrency
+                        ),
+                        incomeYTD: Money(
+                            amount: TransactionsRowsBuilder.incomeYTD(from: transactions),
+                            currency: baseCurrency
+                        )
                     )
-                )
 
-                TransactionsFilterBar(selectedType: $selectedType)
+                    TransactionsFilterBar(selectedType: $selectedType)
 
-                TransactionsTable(
-                    rows: rows,
-                    baseCurrency: baseCurrency,
-                    sort: $sort
-                )
+                    TransactionsTable(
+                        rows: rows,
+                        baseCurrency: baseCurrency,
+                        sort: $sort
+                    )
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(theme.bg)
     }

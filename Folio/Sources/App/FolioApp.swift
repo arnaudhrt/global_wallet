@@ -66,6 +66,18 @@ struct FolioApp: App {
                 }
                 .keyboardShortcut("r", modifiers: .command)
             }
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    router.showSettingsSheet = true
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+            CommandGroup(after: .pasteboard) {
+                Button("Find Asset") {
+                    router.searchFocused = true
+                }
+                .keyboardShortcut("k", modifiers: .command)
+            }
         }
     }
 }

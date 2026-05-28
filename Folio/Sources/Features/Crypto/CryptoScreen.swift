@@ -17,6 +17,7 @@ import SwiftData
 struct CryptoScreen: View {
     @Environment(\.theme) private var theme
     @Environment(\.modelContext) private var context
+    @Environment(AppRouter.self) private var router
 
     @Query(sort: \PortfolioTransaction.date, order: .forward)
     private var transactions: [PortfolioTransaction]
@@ -28,48 +29,65 @@ struct CryptoScreen: View {
 
     @Query private var accounts: [Account]
 
+    @Query private var fxRates: [FXRate]
+
     @State private var selectedWallet: String? = nil
     @State private var sort: CryptoSort = .default
     @State private var expanded: Set<String> = ["BTC", "ETH"]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                CryptoSummary(
-                    marketValue: summary.marketValue,
-                    positionsCount: summary.positionsCount,
-                    walletsCount: summary.walletsCount,
-                    unrealizedPnL: summary.unrealizedPnL,
-                    unrealizedPnLPct: summary.unrealizedPnLPct,
-                    stakingYTD: summary.stakingYTD,
-                    stakingSubtitle: summary.stakingSubtitle
+            if !hasAnyCryptoTxn {
+                EmptyState(
+                    icon: "bitcoinsign.circle",
+                    headline: "No crypto holdings yet",
+                    sub: "Buy on an exchange or move into a wallet to see it here.",
+                    ctaLabel: "Add a transaction",
+                    onCTA: { router.showAddSheet = true }
                 )
+                .frame(maxWidth: .infinity, minHeight: 360)
+            } else {
+                VStack(alignment: .leading, spacing: 20) {
+                    CryptoSummary(
+                        marketValue: summary.marketValue,
+                        positionsCount: summary.positionsCount,
+                        walletsCount: summary.walletsCount,
+                        unrealizedPnL: summary.unrealizedPnL,
+                        unrealizedPnLPct: summary.unrealizedPnLPct,
+                        stakingYTD: summary.stakingYTD,
+                        stakingSubtitle: summary.stakingSubtitle
+                    )
 
-                CryptoFilterBar(
-                    wallets: walletPills,
-                    selectedWallet: $selectedWallet,
-                    sort: $sort,
-                    onExpandAll: expandAll,
-                    onCollapseAll: collapseAll,
-                    expandControlsEnabled: selectedWallet == nil
-                )
+                    CryptoFilterBar(
+                        wallets: walletPills,
+                        selectedWallet: $selectedWallet,
+                        sort: $sort,
+                        onExpandAll: expandAll,
+                        onCollapseAll: collapseAll,
+                        expandControlsEnabled: selectedWallet == nil
+                    )
 
-                CryptoTable(
-                    aggregateRows: aggregateRows,
-                    subRowsByAsset: subRowsByAsset,
-                    cryptoSubtotalMV: summary.marketValue.amount,
-                    footerPnL: summary.unrealizedPnL,
-                    footerPnLPct: summary.unrealizedPnLPct,
-                    sort: $sort,
-                    expanded: expanded,
-                    onToggleExpansion: toggleExpansion,
-                    scopedAccount: scopedAccount
-                )
+                    CryptoTable(
+                        aggregateRows: aggregateRows,
+                        subRowsByAsset: subRowsByAsset,
+                        cryptoSubtotalMV: summary.marketValue.amount,
+                        footerPnL: summary.unrealizedPnL,
+                        footerPnLPct: summary.unrealizedPnLPct,
+                        sort: $sort,
+                        expanded: expanded,
+                        onToggleExpansion: toggleExpansion,
+                        scopedAccount: scopedAccount
+                    )
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(theme.bg)
+    }
+
+    private var hasAnyCryptoTxn: Bool {
+        transactions.contains { $0.asset?.kind == .crypto }
     }
 
     // MARK: - Derived state
@@ -103,7 +121,7 @@ struct CryptoScreen: View {
         HoldingsReducer.reduceByAsset(
             transactions: scopedTransactions,
             priceFor: priceFor,
-            fxAt: { from, to, _ in from == to ? 1 : nil },
+            fxAt: FXLookup.fxAt(rates: fxRates),
             baseCurrency: baseCurrency
         )
     }
@@ -120,7 +138,7 @@ struct CryptoScreen: View {
         return HoldingsReducer.reduceByAssetAndAccount(
             transactions: transactions,
             priceFor: priceFor,
-            fxAt: { from, to, _ in from == to ? 1 : nil },
+            fxAt: FXLookup.fxAt(rates: fxRates),
             baseCurrency: baseCurrency
         )
     }

@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Debug-only screen that exercises every primitive at the current colorScheme.
-/// Used in M1 to verify the design system; will be replaced by `MacShell` in M2.
+/// Used in M1 to verify the design system; superseded by `MacShell` in M2 but
+/// kept here as a previewable canvas.
 struct DesignSystemPreview: View {
     @Environment(\.theme) private var theme
     @Environment(\.colorScheme) private var colorScheme
@@ -16,24 +17,24 @@ struct DesignSystemPreview: View {
                     HStack(alignment: .top, spacing: 12) {
                         Metric(
                             label: "Total Value",
-                            value: FolioFormat.usd(487234.18),
-                            sub: "+\(FolioFormat.usd(8420.50)) today",
+                            value: PreviewFormat.usd(487234.18),
+                            sub: "+\(PreviewFormat.usd(8420.50)) today",
                             subTone: .positive
                         )
                         Metric(
                             label: "All-time Gain",
-                            value: FolioFormat.usd(142891.44),
-                            badge: MetricBadge(text: FolioFormat.pct(41.5, decimals: 1), tone: .positive)
+                            value: PreviewFormat.usd(142891.44),
+                            badge: MetricBadge(text: PreviewFormat.pct(41.5, decimals: 1), tone: .positive)
                         )
                         Metric(
                             label: "YTD Performance",
-                            value: FolioFormat.pct(18.7, decimals: 1),
-                            sub: "vs S&P \(FolioFormat.pct(9.2, decimals: 1))",
+                            value: PreviewFormat.pct(18.7, decimals: 1),
+                            sub: "vs S&P \(PreviewFormat.pct(9.2, decimals: 1))",
                             subTone: .neutral
                         )
                         Metric(
                             label: "Invested Capital",
-                            value: FolioFormat.usd(344342.74)
+                            value: PreviewFormat.usd(344342.74)
                         )
                     }
                 }
@@ -86,10 +87,10 @@ struct DesignSystemPreview: View {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 12) {
                                 Text("Gain").foregroundStyle(theme.green)
-                                Text(FolioFormat.usd(12450.30))
+                                Text(PreviewFormat.usd(12450.30))
                                     .foregroundStyle(theme.green)
                                     .font(.system(.body, design: .monospaced))
-                                Text(FolioFormat.pct(18.7))
+                                Text(PreviewFormat.pct(18.7))
                                     .padding(.horizontal, 6).padding(.vertical, 2)
                                     .background(theme.greenBg)
                                     .foregroundStyle(theme.green)
@@ -98,10 +99,10 @@ struct DesignSystemPreview: View {
                             }
                             HStack(spacing: 12) {
                                 Text("Loss").foregroundStyle(theme.red)
-                                Text("-\(FolioFormat.usd(4230.18))")
+                                Text("-\(PreviewFormat.usd(4230.18))")
                                     .foregroundStyle(theme.red)
                                     .font(.system(.body, design: .monospaced))
-                                Text(FolioFormat.pct(-12.4))
+                                Text(PreviewFormat.pct(-12.4))
                                     .padding(.horizontal, 6).padding(.vertical, 2)
                                     .background(theme.redBg)
                                     .foregroundStyle(theme.red)
@@ -115,11 +116,11 @@ struct DesignSystemPreview: View {
                 section("Formatters") {
                     Card {
                         VStack(alignment: .leading, spacing: 6) {
-                            formatRow("FolioFormat.usd(487234.18)", FolioFormat.usd(487234.18))
-                            formatRow("FolioFormat.usdNoCents(344342.74)", FolioFormat.usdNoCents(344342.74))
-                            formatRow("FolioFormat.pct(18.7)", FolioFormat.pct(18.7))
-                            formatRow("FolioFormat.pct(-12.4)", FolioFormat.pct(-12.4))
-                            formatRow("FolioFormat.num(1234567.8901, decimals: 4)", FolioFormat.num(1234567.8901, decimals: 4))
+                            formatRow("PreviewFormat.usd(487234.18)", PreviewFormat.usd(487234.18))
+                            formatRow("PreviewFormat.usdNoCents(344342.74)", PreviewFormat.usdNoCents(344342.74))
+                            formatRow("PreviewFormat.pct(18.7)", PreviewFormat.pct(18.7))
+                            formatRow("PreviewFormat.pct(-12.4)", PreviewFormat.pct(-12.4))
+                            formatRow("PreviewFormat.num(1234567.8901, decimals: 4)", PreviewFormat.num(1234567.8901, decimals: 4))
                         }
                     }
                 }
@@ -186,5 +187,49 @@ struct DesignSystemPreview: View {
                 .monospacedDigit()
                 .foregroundStyle(theme.text)
         }
+    }
+}
+
+/// USD-locale formatters used by the preview canvas. Lived as `FolioFormat` in
+/// `Formatters.swift` during M1; inlined here in M10 since production code
+/// formats via `Money.formatted()`. Kept private so this file is the only
+/// consumer.
+private enum PreviewFormat {
+    static func usd(_ value: Double, decimals: Int = 2) -> String {
+        let f = currencyFormatter(decimals: decimals)
+        return f.string(from: NSNumber(value: value)) ?? "$\(value)"
+    }
+
+    static func usdNoCents(_ value: Double) -> String {
+        usd(value, decimals: 0)
+    }
+
+    static func pct(_ value: Double, decimals: Int = 2) -> String {
+        let sign = value > 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.\(decimals)f", value))%"
+    }
+
+    static func num(_ value: Double, decimals: Int = 2) -> String {
+        let f = numberFormatter(decimals: decimals)
+        return f.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    private static func currencyFormatter(decimals: Int) -> NumberFormatter {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.locale = Locale(identifier: "en_US")
+        f.minimumFractionDigits = decimals
+        f.maximumFractionDigits = decimals
+        return f
+    }
+
+    private static func numberFormatter(decimals: Int) -> NumberFormatter {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.locale = Locale(identifier: "en_US")
+        f.minimumFractionDigits = decimals
+        f.maximumFractionDigits = decimals
+        return f
     }
 }

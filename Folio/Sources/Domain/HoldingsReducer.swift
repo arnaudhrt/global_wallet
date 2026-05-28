@@ -78,7 +78,7 @@ enum HoldingsReducer {
             } else if let rate = fxAt(txn.currency, baseCurrency, txn.date) {
                 fx = rate
             } else {
-                print("⚠️ HoldingsReducer: missing FX \(txn.currency)→\(baseCurrency) on \(txn.date) — skipping txn \(txn.id)")
+                FolioLog.holdings.warning("missing FX \(txn.currency, privacy: .public)→\(baseCurrency, privacy: .public) on \(txn.date, privacy: .public) — skipping txn")
                 continue
             }
 
@@ -106,13 +106,13 @@ enum HoldingsReducer {
                 if bucket.qty > 0 {
                     let sellQty = min(qty, bucket.qty)
                     if sellQty < qty {
-                        print("⚠️ HoldingsReducer: over-sell on \(asset.symbol) — sold \(qty), only \(bucket.qty) held; clamping")
+                        FolioLog.holdings.warning("over-sell on \(asset.symbol, privacy: .public) — sold \(qty.description, privacy: .public), only \(bucket.qty.description, privacy: .public) held; clamping")
                     }
                     let avgBefore = bucket.cost / bucket.qty
                     bucket.qty  -= sellQty
                     bucket.cost -= sellQty * avgBefore
                 } else {
-                    print("⚠️ HoldingsReducer: sell on \(asset.symbol) with no holdings — ignoring")
+                    FolioLog.holdings.warning("sell on \(asset.symbol, privacy: .public) with no holdings — ignoring")
                 }
             case .dividend, .deposit, .withdraw, .transfer:
                 break

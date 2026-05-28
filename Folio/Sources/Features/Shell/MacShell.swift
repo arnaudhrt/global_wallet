@@ -21,6 +21,9 @@ struct MacShell: View {
                 .sheet(isPresented: $router.showAddSheet) {
                     AddTransactionSheet()
                 }
+                .sheet(isPresented: $router.showSettingsSheet) {
+                    SettingsSheet()
+                }
         }
     }
 
@@ -45,7 +48,7 @@ struct MacShell: View {
         // Each control gets its own ToolbarItem so styling doesn't bleed
         // across siblings — macOS groups sibling controls inside one ToolbarItem.
         ToolbarItem(placement: .secondaryAction) {
-            ToolbarSearchStub()
+            ToolbarSearchField()
         }
         ToolbarItem(placement: .primaryAction) {
     Button {
@@ -58,8 +61,11 @@ struct MacShell: View {
             .contentShape(Circle())
     }
     .buttonStyle(.plain)
-    .keyboardShortcut("n", modifiers: .command)
-    .help("Add holding (⌘N)")
+    // ⌘+ instead of ⌘N — ⌘N is reserved by AppKit for "New Window" and the
+    // collision is harmless today (no second window) but reserves the shortcut
+    // for a future window-management feature.
+    .keyboardShortcut("+", modifiers: .command)
+    .help("Add holding (⌘+)")
 }
     }
 }

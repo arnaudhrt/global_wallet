@@ -14,6 +14,7 @@ import SwiftData
 struct OverviewScreen: View {
     @Environment(\.theme) private var theme
     @Environment(HistoricalQuoteService.self) private var historicalService
+    @Environment(AppRouter.self) private var router
 
     @Query(sort: \PortfolioTransaction.date, order: .forward)
     private var transactions: [PortfolioTransaction]
@@ -34,34 +35,45 @@ struct OverviewScreen: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                OverviewSummary(
-                    totalValue: totalValue,
-                    positionsCount: positionsCount,
-                    accountsCount: accountsCount,
-                    allTimeGain: allTimeGain,
-                    allTimeGainPct: allTimeGainPct,
-                    earliestTransactionDate: earliestDate,
-                    investedCapital: investedCapital,
-                    ytdPct: ytdPct
+            if transactions.isEmpty {
+                EmptyState(
+                    icon: "chart.pie",
+                    headline: "Welcome to Folio",
+                    sub: "Add your first transaction — buys, deposits, dividends — to see your portfolio here.",
+                    ctaLabel: "Add a transaction",
+                    onCTA: { router.showAddSheet = true }
                 )
+                .frame(maxWidth: .infinity, minHeight: 480)
+            } else {
+                VStack(alignment: .leading, spacing: 20) {
+                    OverviewSummary(
+                        totalValue: totalValue,
+                        positionsCount: positionsCount,
+                        accountsCount: accountsCount,
+                        allTimeGain: allTimeGain,
+                        allTimeGainPct: allTimeGainPct,
+                        earliestTransactionDate: earliestDate,
+                        investedCapital: investedCapital,
+                        ytdPct: ytdPct
+                    )
 
-                OverviewChartCard(
-                    range: $range,
-                    series: chartSeries,
-                    isLoading: historicalService.isFetching
-                )
+                    OverviewChartCard(
+                        range: $range,
+                        series: chartSeries,
+                        isLoading: historicalService.isFetching
+                    )
 
-                HStack(alignment: .top, spacing: 14) {
-                    AllocationCard(entries: allocationEntries)
-                        .frame(maxWidth: .infinity)
+                    HStack(alignment: .top, spacing: 14) {
+                        AllocationCard(entries: allocationEntries)
+                            .frame(maxWidth: .infinity)
 
-                    AnnualPerformanceCard(rows: annualRows)
-                        .frame(maxWidth: .infinity)
+                        AnnualPerformanceCard(rows: annualRows)
+                            .frame(maxWidth: .infinity)
+                    }
                 }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(theme.bg)
         .task(id: range) {
@@ -84,7 +96,7 @@ struct OverviewScreen: View {
         HoldingsReducer.reduceByAsset(
             transactions: transactions,
             priceFor: priceFor,
-            fxAt: { from, to, _ in from == to ? 1 : nil },
+            fxAt: FXLookup.fxAt(rates: fxRates),
             baseCurrency: baseCurrency
         )
     }

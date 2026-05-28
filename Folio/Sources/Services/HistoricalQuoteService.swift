@@ -109,7 +109,7 @@ final class HistoricalQuoteService {
             // Likely a unique-key collision on a (asset, source, day) row that
             // a parallel call already wrote — non-fatal, partial successes are
             // already in the store.
-            print("⚠️ HistoricalQuoteService save error: \(error.localizedDescription)")
+            FolioLog.history.error("HistoricalQuoteService save error: \(error.localizedDescription, privacy: .public)")
         }
 
         if failures.isEmpty {

@@ -8,4 +8,8 @@ import Observation
 final class AppRouter {
     var selection: Destination = .overview
     var showAddSheet: Bool = false
+    var showSettingsSheet: Bool = false
+    /// Set to `true` by the ⌘K shortcut to focus the toolbar search field.
+    /// `ToolbarSearchField` reads + resets this via `@FocusState` syncing.
+    var searchFocused: Bool = false
 }

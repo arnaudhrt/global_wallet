@@ -17,6 +17,7 @@ import SwiftData
 struct StocksScreen: View {
     @Environment(\.theme) private var theme
     @Environment(\.modelContext) private var context
+    @Environment(AppRouter.self) private var router
 
     @Query(sort: \PortfolioTransaction.date, order: .forward)
     private var transactions: [PortfolioTransaction]
@@ -26,40 +27,60 @@ struct StocksScreen: View {
 
     @Query private var settings: [AppSettings]
 
+    @Query private var fxRates: [FXRate]
+
     @State private var selectedAccount: String? = nil
     @State private var sort: StocksSort = .default
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                StocksSummary(
-                    marketValue: summary.marketValue,
-                    positionsCount: summary.positionsCount,
-                    brokersCount: summary.brokersCount,
-                    unrealizedPnL: summary.unrealizedPnL,
-                    unrealizedPnLPct: summary.unrealizedPnLPct,
-                    dividendsYTD: summary.dividendsYTD,
-                    lastDividend: summary.lastDividend
+            if !hasAnyStockTxn {
+                EmptyState(
+                    icon: "chart.line.uptrend.xyaxis",
+                    headline: "No positions yet",
+                    sub: "Add a buy for a stock or ETF to see it here.",
+                    ctaLabel: "Add a transaction",
+                    onCTA: { router.showAddSheet = true }
                 )
+                .frame(maxWidth: .infinity, minHeight: 360)
+            } else {
+                VStack(alignment: .leading, spacing: 20) {
+                    StocksSummary(
+                        marketValue: summary.marketValue,
+                        positionsCount: summary.positionsCount,
+                        brokersCount: summary.brokersCount,
+                        unrealizedPnL: summary.unrealizedPnL,
+                        unrealizedPnLPct: summary.unrealizedPnLPct,
+                        dividendsYTD: summary.dividendsYTD,
+                        lastDividend: summary.lastDividend
+                    )
 
-                StocksFilterBar(
-                    accountNames: accountNames,
-                    selectedAccount: $selectedAccount,
-                    sort: $sort
-                )
+                    StocksFilterBar(
+                        accountNames: accountNames,
+                        selectedAccount: $selectedAccount,
+                        sort: $sort
+                    )
 
-                StocksTable(
-                    rows: rows,
-                    totalMarketValue: summary.marketValue.amount,
-                    footerPnL: summary.unrealizedPnL,
-                    footerPnLPct: summary.unrealizedPnLPct,
-                    sort: $sort
-                )
+                    StocksTable(
+                        rows: rows,
+                        totalMarketValue: summary.marketValue.amount,
+                        footerPnL: summary.unrealizedPnL,
+                        footerPnLPct: summary.unrealizedPnLPct,
+                        sort: $sort
+                    )
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(theme.bg)
+    }
+
+    private var hasAnyStockTxn: Bool {
+        transactions.contains { txn in
+            guard let kind = txn.asset?.kind else { return false }
+            return kind == .stock || kind == .etf
+        }
     }
 
     // MARK: - Derived state
@@ -81,7 +102,7 @@ struct StocksScreen: View {
         HoldingsReducer.reduceByAsset(
             transactions: scopedTransactions,
             priceFor: priceFor,
-            fxAt: { from, to, _ in from == to ? 1 : nil },
+            fxAt: FXLookup.fxAt(rates: fxRates),
             baseCurrency: baseCurrency
         )
     }

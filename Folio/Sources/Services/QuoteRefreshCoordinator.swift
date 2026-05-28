@@ -1,6 +1,9 @@
 import Foundation
 import SwiftData
 import Observation
+#if canImport(AppKit)
+import AppKit
+#endif
 
 /// Orchestrates quote + FX refreshes. Dispatches each asset to the right
 /// provider by `AssetKind`, writes results into the SwiftData store, and
@@ -32,6 +35,12 @@ final class QuoteRefreshCoordinator {
     private let crypto: any QuoteProvider
     private let fx: any FXProvider
     private var timer: Timer?
+    /// Stored so we can resume after `applicationDidBecomeActive`.
+    private var timerInterval: TimeInterval = 900
+    /// Lifecycle observers live in a heap class so their deinit (which removes
+    /// them from `NotificationCenter`) fires automatically without forcing the
+    /// coordinator's deinit to touch main-actor state.
+    private let observerBag = NotificationObserverBag()
 
     init(
         container: ModelContainer,
@@ -43,6 +52,7 @@ final class QuoteRefreshCoordinator {
         self.stocks = stocks
         self.crypto = crypto
         self.fx = fx
+        installLifecycleObservers()
     }
 
     // MARK: - Public API
@@ -142,19 +152,27 @@ final class QuoteRefreshCoordinator {
             settings?.lastQuoteRefresh = now
             do {
                 try context.save()
+                status = .ok(at: now)
             } catch {
-                // Likely a unique-key collision on FXRate when the day's row already
-                // exists. Keep going — the price-quote inserts are the load-bearing
-                // half of the refresh.
-                print("⚠️ QuoteRefreshCoordinator save error: \(error.localizedDescription)")
+                // Constraint-violation errors (unique key collisions on FXRate
+                // when the day's row already exists) are recoverable — partial
+                // success is fine. Anything else (disk full, schema mismatch,
+                // model corruption) should surface to the user via the toolbar
+                // dot rather than be swallowed.
+                FolioLog.persist.error("QuoteRefreshCoordinator save error: \(error.localizedDescription, privacy: .public)")
+                if isRecoverablePersistenceError(error) {
+                    status = .ok(at: now)
+                } else {
+                    status = .failed(at: now, message: error.localizedDescription)
+                }
             }
-            status = .ok(at: now)
         } else {
             status = .failed(at: Date(), message: failures.first ?? "no quotes refreshed")
         }
     }
 
     func startTimer(interval: TimeInterval = 900) {
+        timerInterval = interval
         stopTimer()
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -166,6 +184,58 @@ final class QuoteRefreshCoordinator {
     func stopTimer() {
         timer?.invalidate()
         timer = nil
+    }
+
+    // MARK: - Lifecycle (pause timer when backgrounded)
+
+    /// AppKit fires these on the main thread; the observer closures hop onto
+    /// the main actor explicitly so we don't rely on undocumented dispatch.
+    private func installLifecycleObservers() {
+#if canImport(AppKit)
+        let center = NotificationCenter.default
+        let resign = center.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.stopTimer() }
+        }
+        let activate = center.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // Only resume if the timer was previously running.
+                if self.timer == nil {
+                    self.startTimer(interval: self.timerInterval)
+                }
+                // Catch up immediately if we've drifted past one interval —
+                // common when the app sleeps overnight.
+                if let last = self.lastRefresh, Date().timeIntervalSince(last) > self.timerInterval {
+                    await self.refreshAll()
+                }
+            }
+        }
+        observerBag.tokens = [resign, activate]
+#endif
+    }
+
+    /// SwiftData/Core Data unique-constraint codes. Treated as soft errors so
+    /// they don't flip the status dot red just because today's FX row already
+    /// landed.
+    private func isRecoverablePersistenceError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == NSCocoaErrorDomain else { return false }
+        switch nsError.code {
+        case NSManagedObjectConstraintMergeError,        // 133021
+             NSManagedObjectConstraintValidationError,   // 133020
+             NSValidationErrorMinimum...NSValidationErrorMaximum:
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: - Status helpers
@@ -261,6 +331,17 @@ final class QuoteRefreshCoordinator {
 
         return pairs.filter { pair in
             !alreadyCached.contains(FXRate.makeKey(from: pair.from, to: pair.to, asOf: today))
+        }
+    }
+
+    /// Heap container so its deinit can clean up `NotificationCenter` observers
+    /// without the coordinator's own deinit needing main-actor isolation.
+    private final class NotificationObserverBag: @unchecked Sendable {
+        var tokens: [NSObjectProtocol] = []
+        deinit {
+            for token in tokens {
+                NotificationCenter.default.removeObserver(token)
+            }
         }
     }
 

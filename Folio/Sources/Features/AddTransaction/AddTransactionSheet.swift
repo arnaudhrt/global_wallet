@@ -366,7 +366,7 @@ struct AddTransactionSheet: View {
             // Save errors are exceptionally rare for a single-row insert
             // (disk full, schema mismatch). Print for now; M11 will wire
             // a proper user-facing error path.
-            print("⚠️ AddTransactionSheet save error: \(error.localizedDescription)")
+            FolioLog.persist.error("AddTransactionSheet save error: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

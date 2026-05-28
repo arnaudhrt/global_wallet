@@ -32,6 +32,20 @@ enum AssetKind: String, Codable, CaseIterable, Sendable {
     }
 }
 
+enum ThemeOverride: String, Codable, CaseIterable, Sendable {
+    case system
+    case light
+    case dark
+
+    var displayName: String {
+        switch self {
+        case .system: return "System"
+        case .light:  return "Light"
+        case .dark:   return "Dark"
+        }
+    }
+}
+
 enum TransactionType: String, Codable, CaseIterable, Sendable {
     case buy
     case sell

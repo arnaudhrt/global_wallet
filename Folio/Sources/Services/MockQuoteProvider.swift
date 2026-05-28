@@ -45,8 +45,8 @@ actor MockQuoteProvider: QuoteProvider, FXProvider {
         for offset in 0..<days {
             local = (local &* 9301 &+ 49297) % 233280
             let r = Decimal(local) / 233280
-            let step = (r - Decimal(string: "0.42")!) * Decimal(string: "1.6")!
-            price = max(Decimal(string: "0.01")!, price + step)
+            let step = (r - Decimal(42) / Decimal(100)) * (Decimal(16) / Decimal(10))
+            price = max(Decimal(1) / Decimal(100), price + step)
             if let d = cal.date(byAdding: .day, value: -(days - 1 - offset), to: today) {
                 points.append(HistoricalPoint(date: d, close: price))
             }
@@ -86,10 +86,10 @@ actor MockQuoteProvider: QuoteProvider, FXProvider {
     private func fxRate(from: String, to: String) throws -> Decimal {
         switch (from, to) {
         case let (a, b) where a == b: return 1
-        case ("USD", "EUR"): return Decimal(string: "0.92")!
-        case ("EUR", "USD"): return Decimal(string: "1.087")!
-        case ("USD", "GBP"): return Decimal(string: "0.79")!
-        case ("GBP", "USD"): return Decimal(string: "1.266")!
+        case ("USD", "EUR"): return Decimal(92) / Decimal(100)
+        case ("EUR", "USD"): return Decimal(1087) / Decimal(1000)
+        case ("USD", "GBP"): return Decimal(79) / Decimal(100)
+        case ("GBP", "USD"): return Decimal(1266) / Decimal(1000)
         default: throw FXProviderError.unsupportedPair(from, to)
         }
     }
@@ -112,8 +112,8 @@ actor MockQuoteProvider: QuoteProvider, FXProvider {
         )
         state.seed = (state.seed &* 9301 &+ 49297) % 233280
         let r = Decimal(state.seed) / 233280
-        let step = (r - Decimal(string: "0.42")!) * Decimal(string: "1.6")!
-        state.price = max(Decimal(string: "0.01")!, state.price + step)
+        let step = (r - Decimal(42) / Decimal(100)) * (Decimal(16) / Decimal(10))
+        state.price = max(Decimal(1) / Decimal(100), state.price + step)
         states[symbol] = state
         return state.price
     }

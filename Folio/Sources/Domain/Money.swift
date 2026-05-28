@@ -1,7 +1,18 @@
 import Foundation
 
-/// `Decimal`-backed money value with an ISO 4217 currency tag. Binary operators
-/// trap on mixed-currency math — convert via FX first.
+/// `Decimal`-backed money value with an ISO 4217 currency tag.
+///
+/// **Mixed-currency math traps.** `+`, `-`, and `<` `precondition` that both
+/// operands share a `currency`. The trap is intentional — silent currency
+/// coercion would lose information at the lowest level of the stack. Callers
+/// must convert to a common currency (via `FXLookup` or an FX provider) before
+/// any cross-currency arithmetic.
+///
+/// All user-input paths in the app go through `AddTransactionForm`, which
+/// builds `Money` values internally from validated `Decimal` strings. The
+/// trap therefore only fires on programmer error (e.g. summing a EUR `Money`
+/// with a USD `Money`). If non-base-currency user input ever ships through
+/// untrusted paths, switch to a `throws` variant at that boundary.
 struct Money: Equatable, Hashable, Sendable {
     let amount: Decimal
     let currency: String

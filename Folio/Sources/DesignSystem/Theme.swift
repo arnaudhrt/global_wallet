@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 struct FolioTheme: Equatable {
     let bg: Color
@@ -86,20 +87,48 @@ extension EnvironmentValues {
     }
 }
 
-// MARK: - Modifier
+// MARK: - Provider
 
-private struct FolioThemeProvider: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-    func body(content: Content) -> some View {
-        content.environment(\.theme, FolioTheme.resolve(colorScheme))
+/// Resolves the active `FolioTheme` from system color scheme + `AppSettings.themeOverride`,
+/// and applies `.preferredColorScheme` so macOS chrome (traffic lights, menus,
+/// pickers) flips alongside our theme tokens when the user picks Light/Dark.
+private struct FolioThemeProvider<Content: View>: View {
+    @Environment(\.colorScheme) private var systemScheme
+    @Query private var settings: [AppSettings]
+    let content: Content
+
+    private var override: ThemeOverride {
+        settings.first?.themeOverrideEnum ?? .system
+    }
+
+    private var resolvedScheme: ColorScheme {
+        switch override {
+        case .system: return systemScheme
+        case .light:  return .light
+        case .dark:   return .dark
+        }
+    }
+
+    /// `nil` = follow system. Passed to `.preferredColorScheme`.
+    private var preferred: ColorScheme? {
+        switch override {
+        case .system: return nil
+        case .light:  return .light
+        case .dark:   return .dark
+        }
+    }
+
+    var body: some View {
+        content
+            .environment(\.theme, FolioTheme.resolve(resolvedScheme))
+            .preferredColorScheme(preferred)
     }
 }
 
 extension View {
-    /// Resolves `\.theme` from the current `\.colorScheme`. Apply once near the root.
-    /// In M10 this will be replaced by an AppSettings-driven provider that supports a
-    /// user override (System / Light / Dark).
+    /// Resolves `\.theme` from the current `\.colorScheme` and any
+    /// `AppSettings.themeOverride`. Apply once near the root.
     func folioTheme() -> some View {
-        modifier(FolioThemeProvider())
+        FolioThemeProvider(content: self)
     }
 }

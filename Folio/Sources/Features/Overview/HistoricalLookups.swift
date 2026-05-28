@@ -23,18 +23,11 @@ enum HistoricalLookups {
         }
     }
 
+    /// Delegates to `FXLookup` — the FX side of historical and spot-quote
+    /// reducers is identical (forward-fill latest rate ≤ date), so the shared
+    /// helper now lives next to `HoldingsReducer` for general use.
     static func fxAt(rates: [FXRate]) -> (String, String, Date) -> Decimal? {
-        struct PairKey: Hashable { let from: String; let to: String }
-        let grouped: [PairKey: [FXRate]] = Dictionary(
-            grouping: rates,
-            by: { PairKey(from: $0.from, to: $0.to) }
-        ).mapValues { $0.sorted(by: { $0.asOf < $1.asOf }) }
-
-        return { from, to, date in
-            if from == to { return 1 }
-            guard let series = grouped[PairKey(from: from, to: to)], !series.isEmpty else { return nil }
-            return latestRate(in: series, onOrBefore: date)
-        }
+        FXLookup.fxAt(rates: rates)
     }
 
     // MARK: - Forward-fill binary search
@@ -42,11 +35,6 @@ enum HistoricalLookups {
     private static func latestClose(in series: [HistoricalQuote], onOrBefore target: Date) -> Decimal? {
         guard let idx = upperBound(in: series, key: \.date, target: target) else { return nil }
         return series[idx].close
-    }
-
-    private static func latestRate(in series: [FXRate], onOrBefore target: Date) -> Decimal? {
-        guard let idx = upperBound(in: series, key: \.asOf, target: target) else { return nil }
-        return series[idx].rate
     }
 
     /// Returns the index of the last element whose `key` is `<= target`,
