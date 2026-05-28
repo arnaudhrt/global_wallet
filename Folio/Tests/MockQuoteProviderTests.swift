@@ -56,12 +56,58 @@ final class MockQuoteProviderTests: XCTestCase {
         XCTAssertEqual(r.rate, 1)
     }
 
-    func testFXRateUSDEURRoundtripCloseToOne() async throws {
+    func testFXProviderRoundtripConsistency() async throws {
+        // For every supported pair, A→B→A round-trip through the provider's
+        // public API should yield ~1. This tests provider *behavior*, not a
+        // property of the literal table — if a future maintainer changes
+        // either constant without updating its inverse, this fails.
         let p = MockQuoteProvider()
-        let usdEur = try await p.rate(from: "USD", to: "EUR")
-        let eurUsd = try await p.rate(from: "EUR", to: "USD")
-        let product = (usdEur.rate as NSDecimalNumber).doubleValue * (eurUsd.rate as NSDecimalNumber).doubleValue
-        XCTAssertEqual(product, 1.0, accuracy: 0.01)
+        let pairs: [(String, String)] = [("USD", "EUR"), ("USD", "GBP")]
+        for (a, b) in pairs {
+            let ab = try await p.rate(from: a, to: b)
+            let ba = try await p.rate(from: b, to: a)
+            let product = (ab.rate as NSDecimalNumber).doubleValue
+                        * (ba.rate as NSDecimalNumber).doubleValue
+            XCTAssertEqual(product, 1.0, accuracy: 0.01, "round-trip \(a)→\(b)→\(a)")
+        }
+    }
+
+    func testMultiSymbolStateIsIndependent() async throws {
+        // AAPL's per-symbol walk must not be perturbed by interleaved BTC
+        // calls — each symbol has its own LCG state.
+        let solo = MockQuoteProvider(seedBase: 99)
+        var soloAapl: [Decimal] = []
+        for _ in 0..<3 {
+            soloAapl.append(try await solo.quote(symbol: "AAPL").price)
+        }
+
+        let mixed = MockQuoteProvider(seedBase: 99)
+        var mixedAapl: [Decimal] = []
+        for _ in 0..<3 {
+            mixedAapl.append(try await mixed.quote(symbol: "AAPL").price)
+            _ = try await mixed.quote(symbol: "BTC")
+        }
+        XCTAssertEqual(soloAapl, mixedAapl)
+    }
+
+    func testFXUnsupportedPairThrows() async {
+        let p = MockQuoteProvider()
+        await XCTAssertThrowsErrorAsync(try await p.rate(from: "CHF", to: "JPY")) { err in
+            guard case FXProviderError.unsupportedPair(let from, let to) = err else {
+                return XCTFail("expected .unsupportedPair, got \(err)")
+            }
+            XCTAssertEqual(from, "CHF")
+            XCTAssertEqual(to, "JPY")
+        }
+    }
+
+    func testHistoricalFXIsFlatOverRange() async throws {
+        let p = MockQuoteProvider()
+        let points = try await p.historical(from: "USD", to: "EUR", range: .m1)
+        XCTAssertFalse(points.isEmpty)
+        let rates = Set(points.map(\.rate))
+        XCTAssertEqual(rates.count, 1, "historical FX is flat — every point shares one rate")
+        XCTAssertEqual(rates.first, Decimal(92) / Decimal(100))
     }
 }
 

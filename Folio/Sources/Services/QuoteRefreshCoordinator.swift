@@ -261,7 +261,7 @@ final class QuoteRefreshCoordinator {
         let kind: AssetKind
     }
 
-    private struct FXPair: Hashable, Sendable {
+    struct FXPair: Hashable, Sendable {
         let from: String
         let to: String
     }
@@ -303,7 +303,11 @@ final class QuoteRefreshCoordinator {
 
     /// Builds the set of distinct (from, to) FX pairs needed today, skipping
     /// any pair already cached for the UTC day via `FXRate.makeKey`.
-    private func collectFXPairs(
+    ///
+    /// `internal` (not `private`) so `QuoteRefreshCoordinatorTests` can exercise
+    /// the dedup + base-currency-exclusion behavior without us having to wedge
+    /// a `@testable`-only entry point around it.
+    func collectFXPairs(
         transactions: [PortfolioTransaction],
         assets: [Asset],
         baseCurrency: String,

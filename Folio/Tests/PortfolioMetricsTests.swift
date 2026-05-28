@@ -129,4 +129,69 @@ final class PortfolioMetricsTests: XCTestCase {
         let gain = PortfolioMetrics.gainAllTime([loss], baseCurrency: "USD")
         XCTAssertEqual(gain.amount, Decimal(string: "-500"))
     }
+
+    func testTotalValueAllNilPricesYieldsZero() throws {
+        let aapl = try XCTUnwrap(try context.fetch(FetchDescriptor<Asset>()).first { $0.symbol == "AAPL" })
+        let btc  = try XCTUnwrap(try context.fetch(FetchDescriptor<Asset>()).first { $0.symbol == "BTC" })
+        func unpriced(_ asset: Asset) -> Holding {
+            Holding(
+                id: Holding.ID(assetID: asset.persistentModelID, accountID: nil),
+                asset: asset,
+                account: nil,
+                qty: 10,
+                avgCost: Money(amount: 100, currency: "USD"),
+                marketValue: nil,
+                unrealizedPnL: nil,
+                unrealizedPnLPct: nil
+            )
+        }
+        let total = PortfolioMetrics.totalValue([unpriced(aapl), unpriced(btc)], baseCurrency: "USD")
+        XCTAssertEqual(total, Money.zero("USD"))
+    }
+
+    // MARK: - YTD performance
+
+    private static func utcCalendar() -> Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC") ?? .current
+        return cal
+    }
+
+    func testYTDPerformanceEmptyHistoryReturnsNil() {
+        XCTAssertNil(PortfolioMetrics.ytdPerformance(history: [], now: Date()))
+    }
+
+    func testYTDPerformanceAllPointsBeforeJan1ReturnsNil() throws {
+        let cal = Self.utcCalendar()
+        let now = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 15)))
+        let dec30 = try XCTUnwrap(cal.date(from: DateComponents(year: 2025, month: 12, day: 30)))
+        let history = [HistoryPoint(date: dec30, total: Money.usd(10_000))]
+        XCTAssertNil(PortfolioMetrics.ytdPerformance(history: history, now: now))
+    }
+
+    func testYTDPerformanceWithJan1ComputesPctChange() throws {
+        let cal = Self.utcCalendar()
+        let now = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 15)))
+        let jan1 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 1, day: 1)))
+        let jun15 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 15)))
+        let history = [
+            HistoryPoint(date: jan1,  total: Money.usd(10_000)),
+            HistoryPoint(date: jun15, total: Money.usd(11_000)),
+        ]
+        let pct = try XCTUnwrap(PortfolioMetrics.ytdPerformance(history: history, now: now))
+        // (11000 - 10000) / 10000 * 100 = 10%
+        XCTAssertEqual(pct, 10.0, accuracy: 0.0001)
+    }
+
+    func testYTDPerformanceJan1ValueZeroReturnsNil() throws {
+        let cal = Self.utcCalendar()
+        let now = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 15)))
+        let jan1 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 1, day: 1)))
+        let jun15 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 15)))
+        let history = [
+            HistoryPoint(date: jan1,  total: Money.usd(0)),
+            HistoryPoint(date: jun15, total: Money.usd(5_000)),
+        ]
+        XCTAssertNil(PortfolioMetrics.ytdPerformance(history: history, now: now))
+    }
 }

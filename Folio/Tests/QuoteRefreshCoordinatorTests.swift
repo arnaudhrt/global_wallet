@@ -101,6 +101,39 @@ final class QuoteRefreshCoordinatorTests: XCTestCase {
         if case .failed = coord.status { /* ok */ } else { XCTFail("expected .failed, got \(coord.status)") }
     }
 
+    func testCollectFXPairsDedupesAndExcludesBaseCurrency() throws {
+        // Seed has only USD txns + assets. Drop two duplicate EUR txns onto
+        // the same context; ask the coordinator for the FX pair set. The
+        // duplicates must collapse via Set semantics, and the base currency
+        // (USD→USD) must never appear because the filter clauses exclude
+        // `currency != baseCurrency` upstream.
+        let coord = makeCoordinator()
+        let aapl = try XCTUnwrap(try context.fetch(FetchDescriptor<Asset>()).first { $0.symbol == "AAPL" })
+        let schwab = try XCTUnwrap(try context.fetch(FetchDescriptor<Account>()).first { $0.name == "Schwab" })
+
+        let t1 = PortfolioTransaction(date: Date(), type: .buy, asset: aapl, account: schwab,
+                                      quantity: 5, price: 100, amount: 500, currency: "EUR")
+        let t2 = PortfolioTransaction(date: Date().addingTimeInterval(-3600),
+                                      type: .buy, asset: aapl, account: schwab,
+                                      quantity: 3, price: 102, amount: 306, currency: "EUR")
+        context.insert(t1)
+        context.insert(t2)
+        try context.save()
+
+        let txns = try context.fetch(FetchDescriptor<PortfolioTransaction>())
+        let assets = try context.fetch(FetchDescriptor<Asset>())
+        let pairs = coord.collectFXPairs(
+            transactions: txns,
+            assets: assets,
+            baseCurrency: "USD",
+            context: context
+        )
+
+        let eurUsd = pairs.filter { $0.from == "EUR" && $0.to == "USD" }
+        XCTAssertEqual(eurUsd.count, 1, "duplicate EUR txns must collapse to one pair")
+        XCTAssertFalse(pairs.contains { $0.from == "USD" }, "base currency must never appear as `from`")
+    }
+
     func testNewestPriceQuoteWinsForReducer() async throws {
         let coord = makeCoordinator()
 

@@ -85,4 +85,23 @@ final class MoneyTests: XCTestCase {
         XCTAssertEqual(m.amount, trillion)
         XCTAssertEqual((m + Money.usd(Decimal(string: "0.01")!)).amount, Decimal(string: "1000000000001.00"))
     }
+
+    func testFormattedWithUnknownCurrencyCodeDoesNotCrash() {
+        // ISO 4217 reserves "XXX" as the no-currency code; NumberFormatter
+        // either prints it verbatim or falls back to the `?? "\(currency) \(amount)"`
+        // branch. Either way the call must not crash and must include the amount.
+        let m = Money(amount: Decimal(string: "100.00")!, currency: "XXX")
+        let s = m.formatted(locale: Locale(identifier: "en_US"))
+        XCTAssertFalse(s.isEmpty)
+        XCTAssertTrue(s.contains("100"), "expected amount in output, got \(s)")
+    }
+
+    func testArithmeticAssociativity() {
+        // Guard against refactors that introduce intermediate truncation —
+        // (a + b) + c must equal a + (b + c) exactly under Decimal arithmetic.
+        let a = Money.usd(Decimal(string: "1.10")!)
+        let b = Money.usd(Decimal(string: "2.20")!)
+        let c = Money.usd(Decimal(string: "3.30")!)
+        XCTAssertEqual((a + b) + c, a + (b + c))
+    }
 }

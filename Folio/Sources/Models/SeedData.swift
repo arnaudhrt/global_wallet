@@ -113,6 +113,15 @@ enum SeedDataLoader {
 
     // MARK: - Fixed dates
 
+    /// Date stamped on every synthetic per-row Buy generated above (one per
+    /// stock row, one per crypto wallet sub-row).
+    ///
+    /// **Must precede every entry in `seedMockTransactions` chronologically.**
+    /// `HoldingsReducer` sorts by date and computes weighted-avg cost forward
+    /// from the first buy. If a mock txn is ever dated earlier than this, the
+    /// reducer will see a sell-before-buy (or a basis-resetting buy) and the
+    /// per-share avg cost will drift silently. If you add earlier-dated mock
+    /// data, push this date back to match.
     static let syntheticBuyDate: Date = {
         var c = DateComponents()
         c.year = 2024; c.month = 5; c.day = 20; c.hour = 12
