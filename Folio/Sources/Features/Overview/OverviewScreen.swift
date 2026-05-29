@@ -108,16 +108,20 @@ struct OverviewScreen: View {
         PortfolioMetrics.investedCapital(holdings, baseCurrency: baseCurrency)
     }
 
-    private var allTimeGain: Money {
-        PortfolioMetrics.gainAllTime(holdings, baseCurrency: baseCurrency)
+    /// Total return: unrealized (open positions) + realized (past sells) +
+    /// income (dividends + staking). See `PortfolioMetrics.allTimeGain`.
+    private var allTimeGainResult: PortfolioMetrics.AllTimeGain {
+        PortfolioMetrics.allTimeGain(
+            holdings: holdings,
+            transactions: transactions,
+            fxAt: FXLookup.fxAt(rates: fxRates),
+            baseCurrency: baseCurrency
+        )
     }
 
-    private var allTimeGainPct: Double? {
-        let invested = investedCapital.amount
-        guard invested > 0 else { return nil }
-        let pct = allTimeGain.amount / invested * 100
-        return Double(truncating: pct as NSDecimalNumber)
-    }
+    private var allTimeGain: Money { allTimeGainResult.total }
+
+    private var allTimeGainPct: Double? { allTimeGainResult.pct }
 
     private var positionsCount: Int {
         OverviewMetricsBuilder.positionsCount(holdings)

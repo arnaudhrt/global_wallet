@@ -329,4 +329,116 @@ final class HoldingsReducerTests: XCTestCase {
         // Skipped EUR buy → qty stays at the seeded 320 (not 330)
         XCTAssertEqual(aapl.qty, 320)
     }
+
+    // MARK: - All-time breakdown (realized P&L + income)
+
+    private func calDate(_ y: Int, _ m: Int, _ d: Int) -> Date {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC") ?? .current
+        return cal.date(from: DateComponents(year: y, month: m, day: d)) ?? Date()
+    }
+
+    /// Fresh store with the seed transactions wiped so a test owns the ledger.
+    private func emptyLedgerContainer() throws -> ModelContainer {
+        let c = try ModelContainer.folio(inMemory: true)
+        let ctx = c.mainContext
+        for t in try ctx.fetch(FetchDescriptor<PortfolioTransaction>()) { ctx.delete(t) }
+        try ctx.save()
+        return c
+    }
+
+    func testAllTimeBreakdownRealizedDividendStaking() throws {
+        let c = try emptyLedgerContainer()
+        let ctx = c.mainContext
+        let aapl = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Asset>()).first { $0.symbol == "AAPL" })
+        let eth = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Asset>()).first { $0.symbol == "ETH" })
+        let broker = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Account>()).first { $0.name == "Schwab" })
+        let exch = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Account>()).first { $0.kind == .exchange })
+
+        // Buy 10 AAPL @100, sell 4 @150 → realized = 4*(150-100) = 200.
+        ctx.insert(PortfolioTransaction(date: calDate(2026, 1, 5), type: .buy, asset: aapl, account: broker, quantity: 10, price: 100, amount: 1000, currency: "USD"))
+        ctx.insert(PortfolioTransaction(date: calDate(2026, 3, 1), type: .sell, asset: aapl, account: broker, quantity: 4, price: 150, amount: 600, currency: "USD"))
+        // Dividend $50.
+        ctx.insert(PortfolioTransaction(date: calDate(2026, 4, 1), type: .dividend, asset: aapl, account: broker, amount: 50, currency: "USD"))
+        // Stake 0.1 ETH @2000 → staking income 200 (also adds to ETH basis).
+        ctx.insert(PortfolioTransaction(date: calDate(2026, 2, 1), type: .stake, asset: eth, account: exch, quantity: Decimal(string: "0.1"), price: 2000, amount: 200, currency: "USD"))
+        try ctx.save()
+
+        let b = HoldingsReducer.allTimeBreakdown(
+            transactions: try ctx.fetch(FetchDescriptor<PortfolioTransaction>()),
+            fxAt: usdOnly,
+            baseCurrency: "USD"
+        )
+        XCTAssertEqual(b.realizedPnL, Decimal(200))
+        XCTAssertEqual(b.dividendIncome, Decimal(50))
+        XCTAssertEqual(b.stakingIncome, Decimal(200))
+        XCTAssertEqual(b.totalInvested, Decimal(1000), "only the AAPL buy counts; staking is not invested capital")
+        XCTAssertEqual(b.realizedPlusIncome, Decimal(450))
+    }
+
+    func testAllTimeBreakdownOverSellClampsRealized() throws {
+        let c = try emptyLedgerContainer()
+        let ctx = c.mainContext
+        let aapl = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Asset>()).first { $0.symbol == "AAPL" })
+        let broker = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Account>()).first { $0.name == "Schwab" })
+        ctx.insert(PortfolioTransaction(date: calDate(2026, 1, 5), type: .buy, asset: aapl, account: broker, quantity: 5, price: 100, amount: 500, currency: "USD"))
+        ctx.insert(PortfolioTransaction(date: calDate(2026, 2, 5), type: .sell, asset: aapl, account: broker, quantity: 10, price: 120, amount: 1200, currency: "USD"))
+        try ctx.save()
+
+        let b = HoldingsReducer.allTimeBreakdown(
+            transactions: try ctx.fetch(FetchDescriptor<PortfolioTransaction>()),
+            fxAt: usdOnly,
+            baseCurrency: "USD"
+        )
+        // Only 5 held → realized on 5 units: 5*(120-100) = 100, not 10's worth.
+        XCTAssertEqual(b.realizedPnL, Decimal(100))
+    }
+
+    func testAllTimeBreakdownAppliesFXAtTxnDate() throws {
+        let c = try emptyLedgerContainer()
+        let ctx = c.mainContext
+        let aapl = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Asset>()).first { $0.symbol == "AAPL" })
+        let broker = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Account>()).first { $0.name == "Schwab" })
+        aapl.currency = "EUR"
+        // Buy 10 @100 EUR when EUR→USD = 1.1 → invested 1100 USD.
+        ctx.insert(PortfolioTransaction(date: calDate(2026, 1, 5), type: .buy, asset: aapl, account: broker, quantity: 10, price: 100, amount: 1000, currency: "EUR"))
+        // Sell 10 @120 EUR when EUR→USD = 1.2 → proceeds 1440 USD; cost 1100 → realized 340.
+        ctx.insert(PortfolioTransaction(date: calDate(2026, 6, 5), type: .sell, asset: aapl, account: broker, quantity: 10, price: 120, amount: 1200, currency: "EUR"))
+        try ctx.save()
+
+        let b = HoldingsReducer.allTimeBreakdown(
+            transactions: try ctx.fetch(FetchDescriptor<PortfolioTransaction>()),
+            fxAt: { from, to, date in
+                guard from == "EUR", to == "USD" else { return from == to ? 1 : nil }
+                return date < self.calDate(2026, 3, 1) ? Decimal(string: "1.1") : Decimal(string: "1.2")
+            },
+            baseCurrency: "USD"
+        )
+        XCTAssertEqual(b.totalInvested, Decimal(1100))
+        XCTAssertEqual(b.realizedPnL, Decimal(340))
+    }
+
+    func testAllTimeGainSumsUnrealizedRealizedAndIncome() throws {
+        let c = try emptyLedgerContainer()
+        let ctx = c.mainContext
+        let aapl = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Asset>()).first { $0.symbol == "AAPL" })
+        let broker = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Account>()).first { $0.name == "Schwab" })
+        // Buy 10 @100; sell 4 @150 (realized 200); dividend 50. 6 left @ cost 100.
+        ctx.insert(PortfolioTransaction(date: calDate(2026, 1, 5), type: .buy, asset: aapl, account: broker, quantity: 10, price: 100, amount: 1000, currency: "USD"))
+        ctx.insert(PortfolioTransaction(date: calDate(2026, 3, 1), type: .sell, asset: aapl, account: broker, quantity: 4, price: 150, amount: 600, currency: "USD"))
+        ctx.insert(PortfolioTransaction(date: calDate(2026, 4, 1), type: .dividend, asset: aapl, account: broker, amount: 50, currency: "USD"))
+        try ctx.save()
+
+        let txns = try ctx.fetch(FetchDescriptor<PortfolioTransaction>())
+        let holdings = HoldingsReducer.reduceByAsset(transactions: txns, priceFor: { _ in 200 }, fxAt: usdOnly, baseCurrency: "USD")
+        let gain = PortfolioMetrics.allTimeGain(holdings: holdings, transactions: txns, fxAt: usdOnly, baseCurrency: "USD")
+
+        // Unrealized: 6 held, price 200, cost 100 → 6*(200-100) = 600.
+        XCTAssertEqual(gain.unrealized.amount, Decimal(600))
+        XCTAssertEqual(gain.realized.amount, Decimal(200))
+        XCTAssertEqual(gain.income.amount, Decimal(50))
+        XCTAssertEqual(gain.total.amount, Decimal(850), "600 + 200 + 50")
+        // pct = 850 / 1000 invested * 100 = 85%.
+        XCTAssertEqual(try XCTUnwrap(gain.pct), 85.0, accuracy: 0.0001)
+    }
 }

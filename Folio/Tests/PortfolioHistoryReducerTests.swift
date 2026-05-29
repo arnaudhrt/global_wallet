@@ -202,6 +202,67 @@ final class PortfolioHistoryReducerTests: XCTestCase {
         XCTAssertEqual(series.first?.total.amount, Decimal(0), "over-sell clamps qty to 0")
     }
 
+    func testNetFlowAttributedToTheSubPeriodOfTheTransaction() throws {
+        // A buy lands in each sub-period; netFlow on a point must be the sum of
+        // external flows since the previous point (the basis for TWR).
+        let c = try freshContainer()
+        let ctx = c.mainContext
+        let aapl = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Asset>()).first { $0.symbol == "AAPL" })
+        let account = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Account>()).first { $0.name == "Schwab" })
+        ctx.insert(PortfolioTransaction(
+            date: date(2026, 1, 1), type: .buy, asset: aapl, account: account,
+            quantity: 10, price: 100, amount: 1000, currency: "USD"
+        ))
+        ctx.insert(PortfolioTransaction(
+            date: date(2026, 3, 15), type: .sell, asset: aapl, account: account,
+            quantity: 4, price: 100, amount: 400, currency: "USD"
+        ))
+        try ctx.save()
+
+        let dates = [date(2026, 2, 1), date(2026, 4, 1), date(2026, 5, 1)]
+        let series = PortfolioHistoryReducer.series(
+            transactions: try ctx.fetch(FetchDescriptor<PortfolioTransaction>()),
+            dates: dates,
+            priceOn: { _, _ in 100 },
+            fxAt: usdOnly,
+            baseCurrency: "USD"
+        )
+        XCTAssertEqual(series[0].netFlow.amount, Decimal(1000), "buy flow lands in first sub-period")
+        XCTAssertEqual(series[1].netFlow.amount, Decimal(-400), "sell is a negative flow in its sub-period")
+        XCTAssertEqual(series[2].netFlow.amount, Decimal(0), "no flows since previous point")
+        XCTAssertTrue(series.allSatisfy { $0.netFlow.currency == "USD" })
+    }
+
+    func testStakeAndDividendAreNotExternalFlows() throws {
+        // Staking yield is return-in-kind, dividends are cash income — neither
+        // is a contribution, so neither shows up as netFlow.
+        let c = try freshContainer()
+        let ctx = c.mainContext
+        let eth = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Asset>()).first { $0.symbol == "ETH" })
+        let account = try XCTUnwrap(try ctx.fetch(FetchDescriptor<Account>()).first { $0.kind == .exchange })
+        ctx.insert(PortfolioTransaction(
+            date: date(2026, 1, 1), type: .buy, asset: eth, account: account,
+            quantity: 1, price: 2000, amount: 2000, currency: "USD"
+        ))
+        ctx.insert(PortfolioTransaction(
+            date: date(2026, 2, 1), type: .stake, asset: eth, account: account,
+            quantity: Decimal(string: "0.1"), price: 2000, amount: 200, currency: "USD"
+        ))
+        try ctx.save()
+
+        let series = PortfolioHistoryReducer.series(
+            transactions: try ctx.fetch(FetchDescriptor<PortfolioTransaction>()),
+            dates: [date(2026, 1, 15), date(2026, 3, 1)],
+            priceOn: { _, _ in 2000 },
+            fxAt: usdOnly,
+            baseCurrency: "USD"
+        )
+        XCTAssertEqual(series[0].netFlow.amount, Decimal(2000), "the buy is a flow")
+        XCTAssertEqual(series[1].netFlow.amount, Decimal(0), "stake adds qty but is not a flow")
+        // ...and the staked qty does lift market value (real performance).
+        XCTAssertEqual(series[1].total.amount, Decimal(2200), "1.1 ETH * 2000")
+    }
+
     func testDailyDatesGeneratesContiguousUTCDays() {
         let start = date(2026, 1, 1)
         let end = date(2026, 1, 5)

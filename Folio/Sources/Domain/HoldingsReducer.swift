@@ -46,6 +46,74 @@ enum HoldingsReducer {
         )
     }
 
+    /// All-time ledger totals used by the Overview "All-time Gain" card.
+    /// Walks the whole transaction history once and accumulates:
+    ///
+    /// - `realizedPnL` — gain locked in by `.sell`s: `proceeds − sellQty ×
+    ///   weighted-avg-cost-before-sale`, in base currency. Mirrors the same
+    ///   over-sell clamp as `reduce`. (Unrealized P&L on *open* positions is
+    ///   computed separately from `[Holding]`; this is the realized half that
+    ///   the holdings projection throws away.)
+    /// - `dividendIncome` — sum of `.dividend` cash amounts.
+    /// - `stakingIncome` — sum of `.stake` receipt values. Staking is also
+    ///   booked into cost basis (like a buy at the receipt price), so this
+    ///   income line captures the *free receipt* while realized/unrealized
+    ///   capture only subsequent price moves — no double-count.
+    /// - `totalInvested` — gross cost of all `.buy`s ever (not reduced by
+    ///   sells, excludes staking). Denominator for the all-time return %.
+    ///
+    /// FX is taken at each transaction's own date (so realized gains include
+    /// currency moves, consistent with the cost-vs-market FX treatment in
+    /// `reduce`). Transactions whose currency can't be converted are skipped
+    /// with a warning, matching `reduce`'s posture.
+    static func allTimeBreakdown(
+        transactions: [PortfolioTransaction],
+        fxAt: (_ from: String, _ to: String, _ date: Date) -> Decimal?,
+        baseCurrency: String
+    ) -> AllTimeBreakdown {
+        var costByAsset: [PersistentIdentifier: (qty: Decimal, cost: Decimal)] = [:]
+        var out = AllTimeBreakdown(realizedPnL: 0, dividendIncome: 0, stakingIncome: 0, totalInvested: 0)
+
+        for txn in transactions.sorted(by: { $0.date < $1.date }) {
+            let fx: Decimal
+            if txn.currency == baseCurrency {
+                fx = 1
+            } else if let rate = fxAt(txn.currency, baseCurrency, txn.date) {
+                fx = rate
+            } else {
+                FolioLog.holdings.warning("missing FX \(txn.currency, privacy: .public)→\(baseCurrency, privacy: .public) on \(txn.date, privacy: .public) — skipping txn in all-time breakdown")
+                continue
+            }
+
+            switch txn.type {
+            case .buy, .stake:
+                guard let asset = txn.asset, let qty = txn.quantity, let price = txn.price else { break }
+                let lineCost = qty * price * fx
+                var b = costByAsset[asset.persistentModelID] ?? (qty: 0, cost: 0)
+                b.qty += qty
+                b.cost += lineCost
+                costByAsset[asset.persistentModelID] = b
+                if txn.type == .buy { out.totalInvested += lineCost } else { out.stakingIncome += lineCost }
+            case .sell:
+                guard let asset = txn.asset, let qty = txn.quantity, let price = txn.price else { break }
+                var b = costByAsset[asset.persistentModelID] ?? (qty: 0, cost: 0)
+                guard b.qty > 0 else { break }
+                let sellQty = min(qty, b.qty)
+                let avgBefore = b.cost / b.qty
+                let proceeds = sellQty * price * fx
+                out.realizedPnL += proceeds - sellQty * avgBefore
+                b.qty -= sellQty
+                b.cost -= sellQty * avgBefore
+                costByAsset[asset.persistentModelID] = b
+            case .dividend:
+                out.dividendIncome += txn.amount * fx
+            case .deposit, .withdraw, .transfer:
+                break
+            }
+        }
+        return out
+    }
+
     // MARK: - Internal
 
     private struct BucketKey: Hashable {
@@ -150,4 +218,17 @@ enum HoldingsReducer {
             )
         }
     }
+}
+
+/// All-time ledger totals produced by `HoldingsReducer.allTimeBreakdown`.
+/// Amounts are in the portfolio's base currency.
+struct AllTimeBreakdown: Equatable, Sendable {
+    var realizedPnL: Decimal
+    var dividendIncome: Decimal
+    var stakingIncome: Decimal
+    var totalInvested: Decimal
+
+    /// Realized capital gains + dividend + staking income — the "closed" half
+    /// of total return that `[Holding]` (open positions only) can't see.
+    var realizedPlusIncome: Decimal { realizedPnL + dividendIncome + stakingIncome }
 }

@@ -66,8 +66,7 @@ struct OverviewSummary: View {
         Metric(
             label: "YTD Performance",
             value: ytdValue,
-            sub: ytdSub,
-            subTone: ytdSubTone
+            sub: ytdSub
         )
         .frame(minWidth: Self.cardMinWidth)
     }
@@ -115,11 +114,6 @@ struct OverviewSummary: View {
         guard ytdPct != nil else { return "Available once history covers Jan 1" }
         let cal = Calendar(identifier: .gregorian)
         return "Since Jan 1, \(cal.component(.year, from: Date()))"
-    }
-
-    private var ytdSubTone: FolioTone {
-        guard let pct = ytdPct else { return .neutral }
-        return pct >= 0 ? .positive : .negative
     }
 
     private func signedFormatted(_ m: Money) -> String {

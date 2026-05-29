@@ -4,11 +4,13 @@ import Foundation
 /// a `[HistoryPoint]` series — same `@MainActor enum` posture as the other
 /// builders so call sites in `OverviewScreen` don't have to switch contexts.
 ///
-/// `portfolioPct` for a calendar year is `(last - first) / first * 100` for
-/// points whose date falls within that year. Partial-year rows are allowed
-/// (e.g. the current year through today). S&P 500 / Nasdaq columns are
-/// intentionally omitted in MVP — `AnnualPerformanceCard` renders `—` for
-/// them and the deferred follow-up is tracked in ROADMAP.
+/// `portfolioPct` for a calendar year is the **time-weighted return** over that
+/// year's points (`PortfolioMetrics.timeWeightedReturn`), so buy/sell
+/// contributions within the year don't distort the figure. For a contribution-
+/// free year this telescopes to plain `(last - first) / first * 100`. Partial-
+/// year rows are allowed (e.g. the current year through today). S&P 500 /
+/// Nasdaq columns are intentionally omitted in MVP — `AnnualPerformanceCard`
+/// renders `—` for them and the deferred follow-up is tracked in ROADMAP.
 @MainActor
 enum AnnualPerformanceBuilder {
     static func rows(history: [HistoryPoint]) -> [AnnualPerformanceRow] {
@@ -22,18 +24,12 @@ enum AnnualPerformanceBuilder {
         var rows: [AnnualPerformanceRow] = []
         rows.reserveCapacity(years.count)
         for year in years {
-            guard let points = grouped[year], let first = points.min(by: { $0.date < $1.date }), let last = points.max(by: { $0.date < $1.date }) else { continue }
-            let startAmount = first.total.amount
-            guard startAmount > 0 else {
-                rows.append(AnnualPerformanceRow(year: year, portfolioPct: nil, badge: nil))
-                continue
-            }
-            let pct = (last.total.amount - startAmount) / startAmount * 100
-            rows.append(AnnualPerformanceRow(
-                year: year,
-                portfolioPct: Double(truncating: pct as NSDecimalNumber),
-                badge: nil
-            ))
+            guard let points = grouped[year] else { continue }
+            let sorted = points.sorted(by: { $0.date < $1.date })
+            // TWR over the year's points neutralizes intra-year contributions;
+            // nil when the year opens with zero capital (no positive base).
+            let pct = PortfolioMetrics.timeWeightedReturn(sorted)
+            rows.append(AnnualPerformanceRow(year: year, portfolioPct: pct, badge: nil))
         }
 
         // Tag the best/worst rows by portfolio % (skip nils). Only meaningful

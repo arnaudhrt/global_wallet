@@ -194,4 +194,72 @@ final class PortfolioMetricsTests: XCTestCase {
         ]
         XCTAssertNil(PortfolioMetrics.ytdPerformance(history: history, now: now))
     }
+
+    // MARK: - Time-weighted return (contribution neutralization)
+
+    /// The user's scenario: deposit capital and buy more shares mid-year with no
+    /// price movement → total value climbs but performance must stay flat.
+    func testYTDIgnoresContributionsWhenPriceFlat() throws {
+        let cal = Self.utcCalendar()
+        let now = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 12, day: 31)))
+        let jan1 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 1, day: 1)))
+        let jun1 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 1)))
+        let dec31 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 12, day: 31)))
+        let history = [
+            HistoryPoint(date: jan1,  total: Money.usd(100_000)),
+            // Bought $50k more — value jumps to 150k, but it's a contribution.
+            HistoryPoint(date: jun1,  total: Money.usd(150_000), netFlow: Money.usd(50_000)),
+            HistoryPoint(date: dec31, total: Money.usd(150_000)),
+        ]
+        let pct = try XCTUnwrap(PortfolioMetrics.ytdPerformance(history: history, now: now))
+        XCTAssertEqual(pct, 0.0, accuracy: 0.0001, "contribution must not register as return")
+    }
+
+    /// Same contribution, but the post-contribution portfolio then grows 10%.
+    /// TWR should report ~10%, not the naive (165k-100k)/100k = 65%.
+    func testYTDContributionThenGrowthReportsOnlyGrowth() throws {
+        let cal = Self.utcCalendar()
+        let now = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 12, day: 31)))
+        let jan1 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 1, day: 1)))
+        let jun1 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 1)))
+        let dec31 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 12, day: 31)))
+        let history = [
+            HistoryPoint(date: jan1,  total: Money.usd(100_000)),
+            HistoryPoint(date: jun1,  total: Money.usd(150_000), netFlow: Money.usd(50_000)),
+            HistoryPoint(date: dec31, total: Money.usd(165_000)), // 150k → 165k = +10%
+        ]
+        let pct = try XCTUnwrap(PortfolioMetrics.ytdPerformance(history: history, now: now))
+        XCTAssertEqual(pct, 10.0, accuracy: 0.0001)
+    }
+
+    /// A withdrawal (sell) must not register as a loss.
+    func testTWRIgnoresWithdrawals() throws {
+        let cal = Self.utcCalendar()
+        let jan1 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 1, day: 1)))
+        let jun1 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 1)))
+        let dec31 = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 12, day: 31)))
+        let history = [
+            HistoryPoint(date: jan1,  total: Money.usd(100_000)),
+            // Sold $40k — value drops to 60k, but it's a withdrawal, not a loss.
+            HistoryPoint(date: jun1,  total: Money.usd(60_000), netFlow: Money.usd(-40_000)),
+            HistoryPoint(date: dec31, total: Money.usd(66_000)), // 60k → 66k = +10%
+        ]
+        let pct = try XCTUnwrap(PortfolioMetrics.timeWeightedReturn(history))
+        XCTAssertEqual(pct, 10.0, accuracy: 0.0001)
+    }
+
+    /// Invariant: with no flows TWR telescopes to plain value-change, so the
+    /// metric is unchanged for any contribution-free history.
+    func testTWRZeroFlowTelescopesToValueChange() throws {
+        let cal = Self.utcCalendar()
+        let history = (0..<6).map { i in
+            HistoryPoint(
+                date: cal.date(from: DateComponents(year: 2026, month: i + 1, day: 1))!,
+                total: Money.usd(Decimal(100_000 + i * 5_000))
+            )
+        }
+        // End 125k / start 100k = +25%.
+        let pct = try XCTUnwrap(PortfolioMetrics.timeWeightedReturn(history))
+        XCTAssertEqual(pct, 25.0, accuracy: 0.0001)
+    }
 }
