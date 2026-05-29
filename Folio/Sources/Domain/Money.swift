@@ -61,13 +61,28 @@ struct Money: Equatable, Hashable, Sendable {
         return lhs.amount < rhs.amount
     }
 
-    func formatted(locale: Locale = .current) -> String {
+    func formatted(locale: Locale? = nil) -> String {
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = currency
-        f.locale = locale
+        f.locale = locale ?? Money.formattingLocale(for: currency)
         f.minimumFractionDigits = 2
         f.maximumFractionDigits = 2
         return f.string(from: amount as NSDecimalNumber) ?? "\(currency) \(amount)"
+    }
+
+    /// Locale chosen so each ISO code renders its bare symbol (e.g. `$`, not `US$`).
+    private static func formattingLocale(for currency: String) -> Locale {
+        switch currency {
+        case "USD": return Locale(identifier: "en_US")
+        case "EUR": return Locale(identifier: "de_DE")
+        case "GBP": return Locale(identifier: "en_GB")
+        case "JPY": return Locale(identifier: "ja_JP")
+        case "CHF": return Locale(identifier: "de_CH")
+        case "CAD": return Locale(identifier: "en_CA")
+        case "AUD": return Locale(identifier: "en_AU")
+        case "BRL": return Locale(identifier: "pt_BR")
+        default: return .current
+        }
     }
 }

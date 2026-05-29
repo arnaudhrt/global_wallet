@@ -47,6 +47,7 @@ struct FolioApp: App {
                 }
         }
         .modelContainer(container)
+        .defaultSize(width: 1440, height: 900)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .sidebar) {

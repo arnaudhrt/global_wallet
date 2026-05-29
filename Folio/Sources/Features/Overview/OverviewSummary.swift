@@ -8,7 +8,6 @@ import SwiftUI
 /// placeholder with a friendlier sublabel.
 struct OverviewSummary: View {
     let totalValue: Money
-    let positionsCount: Int
     let accountsCount: Int
     let allTimeGain: Money
     let allTimeGainPct: Double?
@@ -16,37 +15,75 @@ struct OverviewSummary: View {
     let investedCapital: Money
     let ytdPct: Double?
 
+    private static let cardMinWidth: CGFloat = 220
+    private static let cardSpacing: CGFloat = 14
+
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Metric(
-                label: "Total Value",
-                value: totalValue.formatted(),
-                sub: positionsLine
-            )
-            Metric(
-                label: "All-time Gain",
-                value: signedFormatted(allTimeGain),
-                sub: sinceLine,
-                badge: gainBadge
-            )
-            Metric(
-                label: "YTD Performance",
-                value: ytdValue,
-                sub: ytdSub,
-                subTone: ytdSubTone
-            )
-            Metric(
-                label: "Invested Capital",
-                value: investedCapital.formatted(),
-                sub: investedLine
-            )
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: Self.cardSpacing) {
+                cards
+            }
+            Grid(horizontalSpacing: Self.cardSpacing, verticalSpacing: Self.cardSpacing) {
+                GridRow {
+                    totalValueCard
+                    allTimeGainCard
+                }
+                GridRow {
+                    ytdCard
+                    investedCard
+                }
+            }
         }
     }
 
+    @ViewBuilder private var cards: some View {
+        totalValueCard
+        allTimeGainCard
+        ytdCard
+        investedCard
+    }
+
+    private var totalValueCard: some View {
+        Metric(
+            label: "Total Value",
+            value: totalValue.formatted(),
+            sub: positionsLine
+        )
+        .frame(minWidth: Self.cardMinWidth)
+    }
+
+    private var allTimeGainCard: some View {
+        Metric(
+            label: "All-time Gain",
+            value: signedFormatted(allTimeGain),
+            sub: sinceLine,
+            badge: gainBadge
+        )
+        .frame(minWidth: Self.cardMinWidth)
+    }
+
+    private var ytdCard: some View {
+        Metric(
+            label: "YTD Performance",
+            value: ytdValue,
+            sub: ytdSub,
+            subTone: ytdSubTone
+        )
+        .frame(minWidth: Self.cardMinWidth)
+    }
+
+    private var investedCard: some View {
+        Metric(
+            label: "Invested Capital",
+            value: investedCapital.formatted(),
+            sub: investedLine
+        )
+        .frame(minWidth: Self.cardMinWidth)
+    }
+
     private var positionsLine: String {
-        let pos = positionsCount == 1 ? "position" : "positions"
         let acc = accountsCount == 1 ? "account" : "accounts"
-        return "\(positionsCount) \(pos) across \(accountsCount) \(acc)"
+        return "Across \(accountsCount) \(acc)"
     }
 
     private var sinceLine: String {
@@ -58,7 +95,7 @@ struct OverviewSummary: View {
 
     private var investedLine: String {
         let acc = accountsCount == 1 ? "account" : "accounts"
-        return "Cost basis across \(accountsCount) \(acc)"
+        return "Across \(accountsCount) \(acc)"
     }
 
     private var gainBadge: MetricBadge? {

@@ -48,7 +48,6 @@ struct OverviewScreen: View {
                 VStack(alignment: .leading, spacing: 20) {
                     OverviewSummary(
                         totalValue: totalValue,
-                        positionsCount: positionsCount,
                         accountsCount: accountsCount,
                         allTimeGain: allTimeGain,
                         allTimeGainPct: allTimeGainPct,
