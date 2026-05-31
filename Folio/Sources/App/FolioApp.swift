@@ -12,19 +12,22 @@ struct FolioApp: App {
         do {
             let container = try ModelContainer.folio()
             self.container = container
-            let yahoo = YahooQuoteProvider()
-            let coinGecko = CoinGeckoQuoteProvider()
+            // Single Tiingo backend for stocks/ETFs, crypto, and FX. Two
+            // instances — one per asset class — so each routes to the right
+            // endpoint family; the equity instance doubles as the FX provider.
+            let tiingoEquity = TiingoQuoteProvider(assetClass: .equity)
+            let tiingoCrypto = TiingoQuoteProvider(assetClass: .crypto)
             let coordinator = QuoteRefreshCoordinator(
                 container: container,
-                stocks: yahoo,
-                crypto: coinGecko,
-                fx: yahoo
+                stocks: tiingoEquity,
+                crypto: tiingoCrypto,
+                fx: tiingoEquity
             )
             let historicalService = HistoricalQuoteService(
                 container: container,
-                stocks: yahoo,
-                crypto: coinGecko,
-                fx: yahoo
+                stocks: tiingoEquity,
+                crypto: tiingoCrypto,
+                fx: tiingoEquity
             )
             self._coordinator = State(initialValue: coordinator)
             self._historicalService = State(initialValue: historicalService)

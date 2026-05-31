@@ -86,7 +86,7 @@ final class QuoteRefreshCoordinatorTests: XCTestCase {
         if case .ok = coord.status { /* ok */ } else { XCTFail("expected .ok, got \(coord.status)") }
 
         let cryptoQuotes = try context.fetch(FetchDescriptor<PriceQuote>())
-            .filter { $0.source == "coingecko" }
+            .filter { $0.source == "tiingo" }
         XCTAssertGreaterThan(cryptoQuotes.count, 0, "crypto provider should have written rows")
     }
 

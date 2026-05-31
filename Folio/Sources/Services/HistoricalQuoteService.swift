@@ -27,20 +27,17 @@ final class HistoricalQuoteService {
     private let stocks: any QuoteProvider
     private let crypto: any QuoteProvider
     private let fx: any FXProvider
-    private let cryptoDelay: TimeInterval
 
     init(
         container: ModelContainer,
         stocks: any QuoteProvider,
         crypto: any QuoteProvider,
-        fx: any FXProvider,
-        cryptoDelay: TimeInterval = 1.0
+        fx: any FXProvider
     ) {
         self.container = container
         self.stocks = stocks
         self.crypto = crypto
         self.fx = fx
-        self.cryptoDelay = cryptoDelay
     }
 
     /// Idempotent: each call only fetches the (asset, day) rows missing from
@@ -62,15 +59,18 @@ final class HistoricalQuoteService {
         // approximate "covered" as "has at least one row on or before `floor`"
         // — the reducer's forward-fill handles the rest. Cheaper than diffing
         // every day in the range.
-        let stocksToFetch = stockSpecs.filter { !hasCoverage(assetID: $0.id, source: "yahoo", at: floor, context: context) }
-        let cryptoToFetch = cryptoSpecs.filter { !hasCoverage(assetID: $0.id, source: "coingecko", at: floor, context: context) }
+        let stocksToFetch = stockSpecs.filter { !hasCoverage(assetID: $0.id, source: "tiingo", at: floor, context: context) }
+        let cryptoToFetch = cryptoSpecs.filter { !hasCoverage(assetID: $0.id, source: "tiingo", at: floor, context: context) }
         let fxPairs = collectFXPairs(assets: assets, baseCurrency: baseCurrency)
         let fxToFetch = fxPairs.filter { !hasFXCoverage(pair: $0, at: floor, context: context) }
 
-        async let stockResults  = fetchStocks(stocksToFetch, range: range)
+        // Both sleeves go through the provider's batched historical path:
+        // equity fans out (one /daily call per ticker — no multi-ticker history
+        // endpoint), crypto collapses to a single /crypto/prices call.
+        async let stockResults  = fetchHistorical(provider: stocks, specs: stocksToFetch, range: range)
+        async let cryptoResultsAsync = fetchHistorical(provider: crypto, specs: cryptoToFetch, range: range)
         async let fxResults     = fetchFX(pairs: fxToFetch, range: range)
-        let cryptoResults       = await fetchCryptoSerially(cryptoToFetch, range: range)
-        let (stocks, fx) = await (stockResults, fxResults)
+        let (stocks, cryptoResults, fx) = await (stockResults, cryptoResultsAsync, fxResults)
 
         var successes = 0
         var failures: [String] = []
@@ -78,7 +78,7 @@ final class HistoricalQuoteService {
         for (spec, result) in stocks {
             switch result {
             case .success(let points):
-                persist(points, assetID: spec.id, source: "yahoo", currency: spec.currency, context: context)
+                persist(points, assetID: spec.id, source: "tiingo", currency: spec.currency, context: context)
                 successes += 1
             case .failure(let err):
                 failures.append("\(spec.symbol): \(err.localizedDescription)")
@@ -87,7 +87,7 @@ final class HistoricalQuoteService {
         for (spec, result) in cryptoResults {
             switch result {
             case .success(let points):
-                persist(points, assetID: spec.id, source: "coingecko", currency: spec.currency, context: context)
+                persist(points, assetID: spec.id, source: "tiingo", currency: spec.currency, context: context)
                 successes += 1
             case .failure(let err):
                 failures.append("\(spec.symbol): \(err.localizedDescription)")
@@ -146,43 +146,15 @@ final class HistoricalQuoteService {
 
     // MARK: - Fetching
 
-    private func fetchStocks(_ specs: [AssetSpec], range: QuoteRange) async -> [(AssetSpec, Result<[HistoricalPoint], Error>)] {
+    /// Fetches historical points for `specs` via the provider's batched path,
+    /// then re-pairs the symbol-keyed results back to their `AssetSpec`. The
+    /// provider decides the call shape (equity fans out, crypto is one call).
+    private func fetchHistorical(provider: any QuoteProvider, specs: [AssetSpec], range: QuoteRange) async -> [(AssetSpec, Result<[HistoricalPoint], Error>)] {
         guard !specs.isEmpty else { return [] }
-        let provider = stocks
-        return await withTaskGroup(of: (AssetSpec, Result<[HistoricalPoint], Error>).self) { group in
-            for spec in specs {
-                group.addTask {
-                    do {
-                        let points = try await provider.historical(symbol: spec.symbol, range: range)
-                        return (spec, .success(points))
-                    } catch {
-                        return (spec, .failure(error))
-                    }
-                }
-            }
-            var out: [(AssetSpec, Result<[HistoricalPoint], Error>)] = []
-            while let r = await group.next() { out.append(r) }
-            return out
+        let bySymbol = await provider.historicalBatch(symbols: specs.map { $0.symbol }, range: range)
+        return specs.map { spec in
+            (spec, bySymbol[spec.symbol] ?? .failure(QuoteProviderError.unsupportedSymbol(spec.symbol)))
         }
-    }
-
-    private func fetchCryptoSerially(_ specs: [AssetSpec], range: QuoteRange) async -> [(AssetSpec, Result<[HistoricalPoint], Error>)] {
-        var out: [(AssetSpec, Result<[HistoricalPoint], Error>)] = []
-        out.reserveCapacity(specs.count)
-        for (i, spec) in specs.enumerated() {
-            do {
-                let points = try await crypto.historical(symbol: spec.symbol, range: range)
-                out.append((spec, .success(points)))
-            } catch {
-                out.append((spec, .failure(error)))
-            }
-            // Space requests out so the free-tier limit doesn't bite. Skip the
-            // sleep after the last call.
-            if i < specs.count - 1, cryptoDelay > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(cryptoDelay * 1_000_000_000))
-            }
-        }
-        return out
     }
 
     private func fetchFX(pairs: [FXPair], range: QuoteRange) async -> [(FXPair, Result<[HistoricalFXPoint], Error>)] {
@@ -247,7 +219,7 @@ final class HistoricalQuoteService {
                 to: pair.to,
                 asOf: point.date,
                 rate: point.rate,
-                source: "yahoo"
+                source: "tiingo"
             )
             context.insert(row)
         }

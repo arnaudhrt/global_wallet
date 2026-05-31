@@ -124,6 +124,7 @@ final class QuoteRefreshCoordinator {
                     )
                     context.insert(row)
                 }
+                upsertTodayHistorical(asset: asset, price: q.price, currency: q.currency, asOf: q.asOf, context: context)
                 successes += 1
             case .failure(let err):
                 failures.append("quote: \(err.localizedDescription)")
@@ -138,7 +139,7 @@ final class QuoteRefreshCoordinator {
                     to: r.to,
                     asOf: r.asOf,
                     rate: r.rate,
-                    source: "yahoo"
+                    source: "tiingo"
                 )
                 context.insert(row)
                 successes += 1
@@ -270,9 +271,27 @@ final class QuoteRefreshCoordinator {
 
     private func providerSource(for kind: AssetKind) -> String {
         switch kind {
-        case .stock, .etf: return "yahoo"
-        case .crypto:      return "coingecko"
-        case .cash:        return "n/a"
+        case .stock, .etf, .crypto: return "tiingo"
+        case .cash:                 return "n/a"
+        }
+    }
+
+    /// Reuses the spot snapshot to keep the historical series' right edge fresh:
+    /// writes (or updates) *today's* `HistoricalQuote` close from the just-
+    /// fetched spot price — zero extra network calls. Only today's row is ever
+    /// touched (keyed by UTC day), so true past closes from the `/daily`
+    /// backfill are never clobbered. The next refresh on the same day updates
+    /// it in place, so by market close it tracks the closing price.
+    private func upsertTodayHistorical(asset: Asset, price: Decimal, currency: String, asOf: Date, context: ModelContext) {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC") ?? .current
+        let day = cal.startOfDay(for: asOf)
+        let key = HistoricalQuote.makeKey(assetSymbol: asset.symbol, source: "tiingo", date: day)
+        if let existing = asset.historicalQuotes.first(where: { $0.key == key }) {
+            existing.close = price
+            existing.currency = currency
+        } else {
+            context.insert(HistoricalQuote(asset: asset, date: day, close: price, currency: currency, source: "tiingo"))
         }
     }
 

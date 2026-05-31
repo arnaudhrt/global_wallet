@@ -1,8 +1,8 @@
 import Foundation
 
-/// Abstraction over a price-data source. M4 implementations: `MockQuoteProvider`
-/// (deterministic walk for tests/offline), `YahooQuoteProvider` (stocks/ETFs/FX),
-/// `CoinGeckoQuoteProvider` (crypto).
+/// Abstraction over a price-data source. Implementations: `MockQuoteProvider`
+/// (deterministic walk for tests/offline) and `TiingoQuoteProvider` (stocks/ETFs
+/// via `/tiingo/daily`, crypto via `/tiingo/crypto`, FX via `/tiingo/fx`).
 ///
 /// `historical(symbol:range:)` and `search(query:)` are declared so M8 (Overview
 /// chart) and M9 (Add Transaction autocomplete) can layer on without re-shaping
@@ -13,10 +13,16 @@ protocol QuoteProvider: Sendable {
     func search(query: String) async throws -> [SymbolMatch]
 
     /// Batched quote fetch. Default implementation fans out to `quote()` per
-    /// symbol concurrently; providers with a true batch endpoint (CoinGecko's
-    /// `simple/price?ids=a,b,c`) override this to issue a single network call —
-    /// otherwise we burn rate-limit budget for nothing.
+    /// symbol concurrently; providers with a true batch endpoint (Tiingo's
+    /// `/iex?tickers=…` and `/crypto/prices?tickers=…`) override this to issue a
+    /// single network call — otherwise we burn rate-limit budget for nothing.
     func batchQuotes(symbols: [String]) async -> [String: Result<QuoteResult, Error>]
+
+    /// Batched historical fetch. Default fans out to `historical(symbol:range:)`
+    /// concurrently; providers with a multi-ticker history endpoint (Tiingo
+    /// crypto) override to a single call. Keyed by symbol; missing/failed
+    /// symbols carry a `.failure`.
+    func historicalBatch(symbols: [String], range: QuoteRange) async -> [String: Result<[HistoricalPoint], Error>]
 }
 
 extension QuoteProvider {
@@ -33,6 +39,20 @@ extension QuoteProvider {
             return out
         }
     }
+
+    func historicalBatch(symbols: [String], range: QuoteRange) async -> [String: Result<[HistoricalPoint], Error>] {
+        await withTaskGroup(of: (String, Result<[HistoricalPoint], Error>).self) { group in
+            for symbol in symbols {
+                group.addTask {
+                    do { return (symbol, .success(try await self.historical(symbol: symbol, range: range))) }
+                    catch { return (symbol, .failure(error)) }
+                }
+            }
+            var out: [String: Result<[HistoricalPoint], Error>] = [:]
+            while let (s, r) = await group.next() { out[s] = r }
+            return out
+        }
+    }
 }
 
 struct QuoteResult: Sendable, Equatable {
@@ -45,23 +65,8 @@ struct QuoteResult: Sendable, Equatable {
 enum QuoteRange: String, Sendable, CaseIterable {
     case d1, w1, m1, m3, ytd, y1, y5, all
 
-    /// Yahoo's `range=` query value. `ytd` is supported natively; `all` maps to
-    /// `max`. The rest follow Yahoo's standard suffixes.
-    var yahooRange: String {
-        switch self {
-        case .d1:  return "1d"
-        case .w1:  return "5d"
-        case .m1:  return "1mo"
-        case .m3:  return "3mo"
-        case .ytd: return "ytd"
-        case .y1:  return "1y"
-        case .y5:  return "5y"
-        case .all: return "max"
-        }
-    }
-
-    /// CoinGecko's `days=` query value. Their `market_chart` endpoint takes a
-    /// number of days; we pre-compute that here. `.ytd` resolves against `now`
+    /// Number of days the range spans, used to derive a `startDate` for the
+    /// provider's historical endpoints. `.ytd` resolves against `now`
     /// (injectable for tests); `.all` uses a large enough window (10 years) to
     /// cover any seeded history without abusing the API.
     func days(now: Date = .now) -> Int {
