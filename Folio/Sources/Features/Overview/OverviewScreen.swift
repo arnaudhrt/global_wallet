@@ -157,10 +157,22 @@ struct OverviewScreen: View {
         let now = Date()
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC") ?? .current
-        let floor = cal.date(byAdding: .day, value: -rangeEnum.days(now: now), to: cal.startOfDay(for: now)) ?? now
-        // For long ranges the daily series can get noisy; sample weekly to keep
-        // the chart responsive. Daily for ≤ 3 months, weekly otherwise.
-        let stride = rangeEnum.days(now: now) <= 90 ? 1 : 7
+        let rangeFloor = cal.date(byAdding: .day, value: -rangeEnum.days(now: now), to: cal.startOfDay(for: now)) ?? now
+        // Clamp the left edge to the first transaction. There's nothing to chart
+        // before the portfolio existed, and a floor that predates it (e.g. "All"
+        // = now − 10y) draws a flat $0 line that ramps up at the first buy. The
+        // Annual table already clamps the same way (see `annualRows`).
+        let floor: Date
+        if let earliest = earliestDate, earliest > rangeFloor {
+            floor = cal.startOfDay(for: earliest)
+        } else {
+            floor = rangeFloor
+        }
+        // Sample density follows the *actual* charted span, not the nominal
+        // range — a freshly-started portfolio on "All" still gets daily detail.
+        // Daily for ≤ 3 months, weekly otherwise, to keep the chart responsive.
+        let spanDays = cal.dateComponents([.day], from: floor, to: cal.startOfDay(for: now)).day ?? rangeEnum.days(now: now)
+        let stride = spanDays <= 90 ? 1 : 7
         let dates = stridedDates(from: floor, to: now, every: stride, calendar: cal)
         return PortfolioHistoryReducer.series(
             transactions: transactions,
